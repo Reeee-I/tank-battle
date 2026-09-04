@@ -1,0 +1,4 @@
+# 双人坦克对战 · PC 端依赖
+# 安装：pip install -r requirements.txt
+pygame>=2.0.0
+pyserial>=3.4
