@@ -1,6 +1,6 @@
 # HEX-A 工程：红外发送端（玩家2无线手柄）
 
-> 生成文件：`..\..\HEX\Wireless_TX_P2.hex`（统一 HEX 目录，见 `HEX\README.md` 对照表）
+> 生成文件：`..\..\HEX\IR_Player2.hex`（统一 HEX 目录，见 `HEX\README.md` 对照表）
 > 作用：替代 **原玩家2有线手柄**。采集导航按键与 K1/K2，每 100ms 打包成
 > `AA 02 按键状态` 3 字节数据包，经 **红外（IR，NEC_R05d）** 发出。
 > 数据包格式与原有线协议完全一致，PC 端无需任何修改。
@@ -12,11 +12,11 @@
 | 文件 | 说明 |
 |---|---|
 | `main.c` | 唯一源文件（完整中文注释，C89，无寄存器直接操作，仅用 BSP API） |
-| `HEX_A.uvproj` | Keil 工程（Target: HEX_A_IR_Tx，Output → `..\..\HEX\Wireless_TX_P2.hex`） |
+| `HEX_A.uvproj` | Keil 工程（Target: HEX_A_IR_Tx，Output → `..\..\HEX\IR_Player2.hex`） |
 | `STC_BSP.lib` | BSP 库副本（V3.6b，与 `MCU/STC_BSP.lib` 一致） |
 | `inc/` | BSP 头文件副本：`STC15F2K60S2.H` `sys.H` `displayer.h` `Key.H` `adc.h` `IR.h` |
 
-> 编译后 HEX 在 `A大项目\HEX\Wireless_TX_P2.hex`（不在本目录内）。
+> 编译后 HEX 在 `A大项目\HEX\IR_Player2.hex`（不在本目录内）。
 
 ## 2. 程序流程
 
@@ -58,13 +58,13 @@ my100mS_callback(每100ms):
 1. 双击打开 `HEX_A.uvproj`（Keil 中需已安装 STC 设备库，STC-ISP →
    "Keil仿真设置" 安装过即可）；
 2. 按 **F7** 编译；
-3. 产物：`A大项目\HEX\Wireless_TX_P2.hex`。
+3. 产物：`A大项目\HEX\IR_Player2.hex`。
 
 方式 B（手动核对配置清单）：
 - 芯片：**STC15F2K60S2 Series**（STC 设备库）；
 - 内存模式 Memory Model = **Small**；优化 Optimize = **Level 8**；
 - C51 → Include Paths = `.\inc`；Output 勾选 **Create HEX File**；
-- Output Directory = `..\..\HEX\`，Output Name = `Wireless_TX_P2`；
+- Output Directory = `..\..\HEX\`，Output Name = `IR_Player2`；
 - 工程文件：`main.c` + `STC_BSP.lib`（Add Existing Files 时类型选 *）；
 - C51 Define：`WIRELESS_TX`（仅用于区分工程、防止共享输出目录时误用旧 obj）。
 
@@ -72,7 +72,7 @@ my100mS_callback(每100ms):
 
 1. 单片机型号选 **STC15F2K60S2**；
 2. 频率选 **11.0592MHz**（外部晶振，与代码 `SysClock` 一致）；
-3. 载入 `HEX\Wireless_TX_P2.hex` → 下载/编程（必要时按提示重新上电）；
+3. 载入 `HEX\IR_Player2.hex` → 下载/编程（必要时按提示重新上电）；
 4. 烧完 **关闭 STC-ISP**（释放 COM 口给游戏）。
 
 ## 7. 功能核对清单

@@ -44,11 +44,62 @@ class FakeSerial(object):
         except socket.timeout:
             return b''
 
+    def write(self, data):
+        """PC → 板 下行（血量帧等）：发到板端 socket"""
+        return self._sock.sendall(data)
+
     def close(self):
         try:
             self._sock.close()
         except OSError:
             pass
+
+
+_streams = {}     # socket → 未消费的下行字节缓存（跨 recv_hp 调用不丢帧）
+
+
+def recv_hp(sock, code, expect, timeout=2.0):
+    """从板端 socket 读取下行帧，直到找到 AA <code> <expect>（跳过历史帧）。
+    每 socket 维护字节缓存，帧连续到达也不丢失；找到返回 True，超时返回 False。"""
+    sock.settimeout(0.2)
+    buf = _streams.get(sock, b'')
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        while len(buf) < 3:
+            try:
+                chunk = sock.recv(64)
+            except socket.timeout:
+                chunk = b''
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+        while len(buf) >= 3:
+            if buf[0] == 0xAA and buf[1] in (0xD1, 0xD2):
+                if buf[1] == code and buf[2] == expect:
+                    _streams[sock] = buf[3:]
+                    return True
+                buf = buf[3:]
+            else:
+                buf = buf[1:]
+        time.sleep(0.005)
+    _streams[sock] = buf
+    return False
+
+
+def drain_socket(sock, idle=0.15):
+    """丢弃已到达的下行字节（含缓存），读到短超时空闲为止"""
+    _streams.pop(sock, None)
+    sock.settimeout(idle)
+    while True:
+        try:
+            if not sock.recv(1024):
+                break
+        except socket.timeout:
+            break
+        except OSError:
+            break
 
 
 class FClock(object):
@@ -80,9 +131,9 @@ def wait_until(cond, timeout=3.0):
 
 
 def main():
-    print('双人坦克对战 · 验收标准(1~7) 自动化预演（虚拟串口板驱动）')
+    print('双人坦克对战 · 验收标准(1~8) 自动化预演（虚拟串口板驱动）')
     print('=' * 62)
-    print(' 注：验收1 的 L0/L7 身份灯与真板烧录为硬件动作，见备注①。')
+    print(' 注：身份=数码管（验收1）；LED=血量条（验收8，亮灭需真板确认）。')
     print('=' * 62)
 
     # ---------- 环境：两块虚拟板 + Game ----------
@@ -116,7 +167,7 @@ def main():
     send(b2, 0x02, 0x00)
     ok = (hub.binding_port(PLAYER1) == 'COM_SIM_P1' and
           hub.binding_port(PLAYER2) == 'COM_SIM_P2')
-    record(1, ok, '身份绑定：板1→玩家1、板2→玩家2（真板 L0/L7 亮灯为硬件项，需实物确认）')
+    record(1, ok, '身份绑定：板1→玩家1、板2→玩家2（真板数码管显示 1/2 为硬件项，需实物确认）')
 
     # ---------- 验收2：导航键移动/转向 ----------
     t1 = g.tanks[PLAYER1]
@@ -162,6 +213,7 @@ def main():
         score[0] = g.tanks[PLAYER1].score
 
     hits = 0
+    dl_hit2 = False            # 验收8：首次命中后收到 AA D2 02（掉血灭 2 灯）
     for shot in range(START_LIVES):
         send(b1, 0x01, 0x00)          # 先清沿：确保 K1 每次产生上升沿(单发)
         frames(3)
@@ -180,6 +232,9 @@ def main():
             break
         hits += 1
         watch_state()
+        if hits == 1:
+            # 首次命中（3→2 命）：玩家2 板应收到 AA D2 02
+            dl_hit2 = recv_hp(b2, 0xD2, 2)
         # 等重生无敌(1s)结束再补下一枪
         for _ in range(70):
             frames(1)
@@ -195,10 +250,15 @@ def main():
            '生命归零 → 玩家1 获胜（game_over=%s winner=%s）' %
            (g.game_over, g.winner))
 
+    # 验收8（前半）：死亡后板2 应收到 AA D2 00（LED 全灭）
+    dl_dead0 = recv_hp(b2, 0xD2, 0)
+
     # ---------- 验收7：手柄按 K2(bit5) 重开（虚拟板真实驱动） ----------
     assert g.game_over
     send(b1, 0x01, 0x00)                  # 先清沿
     frames(3)
+    drain_socket(b1)                      # 清历史帧：重开满血(03)要与绑定补发区分
+    drain_socket(b2)                      # 同上（02/00 证据已在上方取到）
     send(b1, 0x01, BIT_RESTART)           # 玩家1 手柄按 K2
     deadline = time.monotonic() + 3.0
     restarted = False
@@ -214,6 +274,15 @@ def main():
            g.tanks[PLAYER1].score == 0,
            '手柄按 K2 重开：生命/得分/胜负状态全部复位')
 
+    # ---------- 验收8：手柄 LED 血量联动（PC→板下行帧；LED 亮灭为硬件项） ----------
+    #   板2 依序收到：首次命中 AA D2 02 → 死亡 AA D2 00 → K2 重开 AA D2 03；
+    #   板1 收到 K2 重开后的 AA D1 03（开局/重开都从满血 3 命下发）。
+    refill1 = recv_hp(b1, 0xD1, 3)        # K2 重开 → 板1 满血 AA D1 03
+    refill2 = recv_hp(b2, 0xD2, 3)        # K2 重开 → 板2 满血 AA D2 03
+    record(8, dl_hit2 and dl_dead0 and refill1 and refill2,
+           '血量下行：命中→AA D2 02、死亡→AA D2 00、K2重开→两板 AA D1/D2 03'
+           '（LED 灭 2 灯/全灭/六灯全亮为硬件项，需真板确认）')
+
     b1.close()
     b2.close()
     hub.stop()
@@ -223,7 +292,7 @@ def main():
     if fails:
         print('未通过 %d 项：%s' % (len(fails), [f[0] for f in fails]))
         return 1
-    print('验收标准 1~7 自动化预演全部通过 ✓（验收1 亮灯部分需真板确认）')
+    print('验收标准 1~8 自动化预演全部通过 ✓（验收1 亮灯/验收8 亮灯为硬件项需真板确认）')
     return 0
 
 

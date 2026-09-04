@@ -7,7 +7,7 @@
 
   <Targets>
     <Target>
-      <TargetName>HEX_A_IR_Tx</TargetName>
+      <TargetName>RS485_Handle2</TargetName>
       <ToolsetNumber>0x0</ToolsetNumber>
       <ToolsetName>MCS-51</ToolsetName>
       <TargetOption>
@@ -43,8 +43,8 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>..\..\HEX\</OutputDirectory>
-          <OutputName>IR_Player2</OutputName>
+          <OutputDirectory>..\HEX\</OutputDirectory>
+          <OutputName>485_Player2</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
           <CreateHexFile>1</CreateHexFile>
@@ -296,9 +296,9 @@
             <InterruptVectorAddress>0</InterruptVectorAddress>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>WIRELESS_TX</Define>
+              <Define>PLAYER_ID=2</Define>
               <Undefine></Undefine>
-              <IncludePath>.\inc</IncludePath>
+              <IncludePath>..\MCU\inc</IncludePath>
             </VariousControls>
           </C51>
           <Ax51>
@@ -351,14 +351,14 @@
           <GroupName>Source Group 1</GroupName>
           <Files>
             <File>
-              <FileName>main.c</FileName>
+              <FileName>main_handle.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\main.c</FilePath>
+              <FilePath>.\main_handle.c</FilePath>
             </File>
             <File>
               <FileName>STC_BSP.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>.\STC_BSP.lib</FilePath>
+              <FilePath>..\MCU\STC_BSP.lib</FilePath>
             </File>
           </Files>
         </Group>

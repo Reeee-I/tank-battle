@@ -2,28 +2,38 @@
 """serial_handler.py —— 串口通信模块（双人坦克对战 PC 端）
 
 职责：
-  1. 协议定义：与板端完全一致的 3 字节数据包解析/组包说明；
+  1. 协议定义：与板端一致的 3 字节上行包解析 + PC→板下行帧（LED 血量）组帧；
   2. PacketParser：字节流状态机解析器（纯逻辑，可独立测试）；
-  3. SerialLink   ：单个串口口的接收线程（含断线自动重连）；
+  3. SerialLink   ：单个串口的接收线程（含断线自动重连）+ 下行发送队列；
   4. SerialHub    ：统一管理两个板子对应的串口，向游戏提供按键状态，
-                    并自动完成「COM口 ↔ 玩家ID」绑定。
+                    并自动完成「COM口 ↔ 玩家ID」绑定与血量下行/自动补发。
 
 通信协议（9600bps, 8 数据位, 1 停止位, 无校验）：
-    字节0 : 0xAA              包头
-    字节1 : 0x01 / 0x02       玩家1 / 玩家2
-    字节2 : 按键位掩码
-           bit0 左(左转)  bit1 右(右转)  bit2 上(前进)
-           bit3 下(后退)  bit4 开火(K1,单发)  bit5 重开请求(K2,单发)
-           bit6 K3(单发；PC 仅在开始界面当作"任意键开始"输入，对战中无含义)
+    上行（板 → PC，3 字节）：
+        字节0 : 0xAA              包头
+        字节1 : 0x01 / 0x02       玩家1 / 玩家2
+        字节2 : 按键位掩码
+               bit0 左(左转)  bit1 右(右转)  bit2 上(前进)
+               bit3 下(后退)  bit4 开火(K1,单发)  bit5 重开请求(K2,单发)
+               bit6 K3(单发；PC 仅在开始界面当作"任意键开始"输入，对战中无含义)
+    下行（PC → 板，LED 血量联动，v2.8）：
+        字节0 : 0xAA              包头
+        字节1 : 0xD1 / 0xD2       玩家1 / 玩家2 血量命令码
+        字节2 : 0~3               血量（3=满血 → 板端 L0~L5 六灯；每掉 1 血
+                                   灭右侧 2 灯；0 死亡 → 全灭；身份看数码管）
 
 设计要点：
-  - 接收放在独立线程中，绝不阻塞游戏主循环；
+  - 接收放在独立线程中，绝不阻塞游戏主循环；下行帧经 SerialLink 发送队列
+    在同一接收线程内顺带写入串口，避免跨线程并发读写同一个串口对象；
   - 玩家身份由数据包内容（字节1）决定：哪块板先发来合法包，
     就把它绑到对应玩家上，用户无需记住线序；
   - 超过 HEARTBEAT_TIMEOUT 未收到某玩家数据 → 判定该玩家断线，
-    串口线程会持续尝试重连，重连成功后自动恢复。
+    串口线程会持续尝试重连，重连成功后自动恢复；
+  - 血量下行：Game 在血量变化时调 hub.set_hp()；端口(重新)打开/换口绑定后，
+    收到首个上行包即按最新血量自动补发一次（板子重插 LED 立即恢复正确）。
 """
 
+import queue
 import threading
 import time
 
@@ -39,6 +49,18 @@ BIT_DOWN    = 0x08          # bit3：下（后退）
 BIT_FIRE    = 0x10          # bit4：开火（K1，单发）
 BIT_RESTART = 0x20          # bit5：重开请求（K2，单发；仅对局结束时生效）
 BIT_K3      = 0x40          # bit6：K3（单发；PC 开始界面"任意键开始"用，对战中忽略）
+
+# —— PC → 板 下行帧（血量 LED 联动；9600 8N1，3 字节，与上行同格式族）——
+#     帧格式：AA D1 HP / AA D2 HP
+#       D1/D2 = 下行命令码（玩家1 / 玩家2，与玩家号 01/02、点名码 E1/E2 永不冲突）
+#       HP    = 0~3（生命值）：3 满血 → 板端 L0~L5 六灯全亮；每掉 1 血灭右侧 2 灯；
+#               0（死亡）→ LED 全灭。身份由板端数码管（1/2）承担，LED 专用于血量。
+#     发送路径：USB 直连 = PC 写各玩家绑定 COM；485 = PC 写中转板 COM，由中转板
+#               在总线空闲窗口把对应帧转发给指定手柄（板间字节原样）。
+DL_HP_P1   = 0xD1           # 下行：玩家1 血量
+DL_HP_P2   = 0xD2           # 下行：玩家2 血量
+DL_HP_MAX  = 3              # 血量上限（满血=3；START_LIVES 与板端一致）
+DL_HP_CODE = {PLAYER1: DL_HP_P1, PLAYER2: DL_HP_P2}
 
 BAUDRATE    = 9600          # 波特率（与板端一致）
 
@@ -111,9 +133,13 @@ class PacketParser:
 
 
 class SerialLink:
-    """单个串口的接收线程。
+    """单个串口的接收线程 + 下行发送队列。
 
     负责：打开串口 → 持续读字节 → 喂给解析器 → 回调 SerialHub；
+    下行：SerialHub 经 enqueue() 投递的"发给本口板子"的帧（如血量帧），
+    由本线程在每次读循环里顺带写入串口——读写同属一个线程，避免跨线程
+    并发操作同一个 pyserial 对象；串口未打开期间投递的帧先挂队列，连接
+    恢复后自然补发（血量帧是幂等的，重连后 SerialHub 还会按最新值补一次）。
     读失败（拔线/占用）后按 RECONNECT_INTERVAL 周期自动重连，直到 stop。
     """
 
@@ -128,6 +154,28 @@ class SerialLink:
             factory = self._default_factory
         self._open = factory
         self._thread = None
+        self._txq = queue.Queue()     # 下行帧发送队列（线程安全）
+
+    def enqueue(self, data):
+        """把一帧下行数据（bytes）投入发送队列（非阻塞、线程安全）。
+
+        串口当前未打开时数据挂起，等自动重连成功后写入；
+        写入失败/连接丢失时该帧被丢弃（血量帧幂等，SerialHub 会在
+        重绑定后按最新血量自动补发，不依赖本队列可靠性）。
+        """
+        self._txq.put(bytes(data))
+
+    def _flush_tx(self, ser):
+        """把队列里的下行帧全部写入串口（PC → 板）。"""
+        while True:
+            try:
+                data = self._txq.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                ser.write(data)
+            except Exception:
+                break              # 写入失败：丢弃本次与后续队列，交由重连逻辑
 
     def _default_factory(self):
         """默认打开真实串口：9600 8N1，与板端一致"""
@@ -166,6 +214,7 @@ class SerialLink:
                                 chunk = ser.read(1)  # 带超时，顺便当心跳
                         except Exception:
                             break  # 读取异常 → 走重连
+                        self._flush_tx(ser)          # 下行：顺带写出血量等帧
                         for byte in chunk:
                             pkt = parser.feed(byte)
                             if pkt is not None:
@@ -206,6 +255,19 @@ class SerialHub:
         }
         self._errors = []          # 打开失败的提示信息
         self._open_ports = set()   # 当前实际打开中的端口
+        # —— 下行（LED 血量联动）状态 ——
+        self._link_of_port = {}    # port名 → SerialLink（下行帧按玩家绑定口投递）
+        self._port_gen = {}        # port名 → 打开代数（重连后 +1，用于触发补发）
+        self._hp = {PLAYER1: None, PLAYER2: None}   # 各玩家最新血量（None=未开局）
+        self._hp_epoch = {PLAYER1: None, PLAYER2: None}  # 已下发给当前打开的代数
+
+    @staticmethod
+    def _hp_frame(pid, hp):
+        """组一帧下行血量帧：AA <D1/D2> <hp 0~3>"""
+        code = DL_HP_CODE.get(pid)
+        if code is None:
+            return None
+        return bytes((PACKET_HEAD, code, int(max(0, min(DL_HP_MAX, hp)))))
 
     # ------------------------------ 生命周期 ------------------------------
     def start(self, factory=None):
@@ -246,6 +308,7 @@ class SerialHub:
             link = SerialLink(port, self._on_packet, self._on_state,
                               self._stop_event, factory=link_factory)
             self._links.append(link)
+            self._link_of_port[port] = link     # 供下行帧按绑定口投递
             link.start()
         return self._links
 
@@ -263,16 +326,54 @@ class SerialHub:
         with self._lock:
             if opened:
                 self._open_ports.add(port)
+                # 端口(重新)打开 → 代数 +1：该口上已绑定玩家的下行帧需补发一次
+                self._port_gen[port] = self._port_gen.get(port, 0) + 1
             else:
                 self._open_ports.discard(port)
 
     def _on_packet(self, pid, mask, port):
         now = time.monotonic()
+        push_frame = None
         with self._lock:
             st = self._state[pid]
             st['port'] = port
             st['mask'] = mask
             st['last'] = now
+            # 血量补发：绑定口发生变化 / 端口重连（代数+1）后的首个上行包，
+            # 且已记录过该玩家血量 → 把最新血量下行一次（板子重插/重连后
+            # LED 血量立即恢复正确，不用等下一次扣血/回血）
+            hp = self._hp.get(pid)
+            if hp is not None:
+                gen = self._port_gen.get(port, 0)
+                if self._hp_epoch.get(pid) != gen:
+                    self._hp_epoch[pid] = gen
+                    push_frame = self._hp_frame(pid, hp)
+        if push_frame is not None:
+            link = self._link_of_port.get(port)
+            if link is not None:
+                link.enqueue(push_frame)
+
+    # ------------------------------ 下行（LED 血量） ------------------------------
+    def set_hp(self, pid, hp):
+        """下发某玩家手柄板的最新血量（0~3，越界自动夹取）。
+
+        板端 LED 语义：3 满血 = L0~L5 六灯；每掉 1 血灭右侧 2 灯；0（死亡）全灭。
+        已绑定 → 立即经其端口下行；未绑定/未打开 → 记录最新值，
+        等该玩家首次绑定或端口重连后自动补发（见 _on_packet）。
+        """
+        frame = self._hp_frame(pid, hp)
+        if frame is None:
+            return
+        link = None
+        with self._lock:
+            self._hp[pid] = frame[2]          # 存夹取后的血量
+            port = self._state[pid]['port']
+            link = self._link_of_port.get(port) if port else None
+            if link is not None:
+                # 记为本代数已发，避免同一连接的下一上行包重复补发
+                self._hp_epoch[pid] = self._port_gen.get(port, 0)
+        if link is not None:
+            link.enqueue(frame)
 
     # ------------------------------ 查询 ------------------------------
     def get_control(self, pid, now=None):

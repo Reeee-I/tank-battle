@@ -202,6 +202,28 @@ class Game(object):
         self._powerup_cache = {}        # 道具发光表面缓存
         self._fps = 0.0
         self.reset()
+        # 非"开始界面"直开模式（menu=False，测试/直连用）：开局即把满血
+        # 下行给已绑定的手柄板（真机入口 main.py 用 menu=True，改为
+        # 进入对战时在 start_game() 下发，开始界面上 LED 保持全灭）。
+        if not self.menu_active:
+            self._push_all_hp()
+
+    # ------------------------------ LED 血量下行 ------------------------------
+    def _push_hp(self, pid):
+        """把玩家 pid 所控坦克的当前血量(0~3)下行给该玩家手柄板。
+
+        板端 LED 语义（v2.8）：满血3=6灯(L0~L5)、2=4灯、1=2灯、0 死亡=全灭；
+        身份由数码管 1/2 承担，LED 专用于血量。无串口（键盘/无头）为空操作。
+        """
+        if self.hub is None:
+            return
+        hp = int(max(0, min(START_LIVES, self.tanks[pid].lives)))
+        self.hub.set_hp(pid, hp)
+
+    def _push_all_hp(self):
+        """两玩家血量一起下行（开局/重开时把血条复位为满血）"""
+        for pid in (PLAYER1, PLAYER2):
+            self._push_hp(pid)
 
     def _choose_map_id(self):
         """按地图模式挑出本局地图 id"""
@@ -314,11 +336,13 @@ class Game(object):
     # ------------------------------ 开始界面 ------------------------------
     def start_game(self):
         """从开始界面进入对战（仅首次启动时显示开始界面；对局结束 K2/点击
-        重开不经过这里，直接开下一局）。"""
+        重开不经过这里，直接开下一局）。进入对战同时把满血下行给两块
+        手柄板（开始界面期间 LED 保持全灭，身份看数码管）。"""
         if self.menu_active:
             if self.debug:
                 print('[开始] 收到开始输入，进入对战')
             self.menu_active = False
+            self._push_all_hp()         # 开局：手柄 LED 血条复位为满血
 
     def _check_menu_start(self):
         """开始界面：任一手柄/键盘有任何按键输入 → 开始对战"""
@@ -342,6 +366,7 @@ class Game(object):
                 if self.debug:
                     print('[重开] 玩家%d 手柄 K2 触发重新开始' % pid)
                 self.reset()
+                self._push_all_hp()     # 重开：两块手柄 LED 血条复位为满血
                 return
 
     # ------------------------------ 开火/碰撞 ------------------------------
@@ -424,6 +449,7 @@ class Game(object):
             victim.respawn()
             victim.invincible_until = now + INVINCIBLE_TIME
             victim.clear_buffs()       # 阵亡重生清除全部增益/护盾（防滚雪球）
+        self._push_hp(victim.player_id)  # 血量变化 → 手柄 LED 血条联动（0 即全灭）
 
     def _end_game(self, winner_pid):
         """一方生命归零：游戏结束，清除残留子弹冻结画面"""
@@ -498,9 +524,10 @@ class Game(object):
         elif pu.kind == KIND_HEALTH:
             if t.lives < START_LIVES:
                 t.lives = min(START_LIVES, t.lives + POWERUP_HEALTH_GAIN)
-                # 回血成功：坦克头顶绿色"生命 +1"上浮提示
+                # 回血成功：坦克头顶绿色"生命 +1"上浮提示 + 手柄 LED 血条回亮
                 self.toasts.append({'pid': pid, 'born': now, 'text': '生命 +1',
                                     'color': self.GREEN})
+                self._push_hp(pid)
             else:
                 # 满血拾取：无效果但道具仍消耗（防囤积）→ 灰字提示原因
                 self.toasts.append({'pid': pid, 'born': now, 'text': '生命已满',
@@ -574,6 +601,7 @@ class Game(object):
             if self.debug:
                 print('[重开] 鼠标点击触发')
             self.reset()
+            self._push_all_hp()         # 重开：两块手柄 LED 血条复位为满血
 
     # ------------------------------ 底层渲染 ------------------------------
     def _font(self, size, bold=False):

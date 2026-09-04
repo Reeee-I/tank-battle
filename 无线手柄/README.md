@@ -4,8 +4,8 @@
 > **未修改** 板端/PC 端任何功能源码；本目录内所有文件均为新增/副本。
 > 芯片：STC15F2K60S2；开发环境：Keil uVision4 + C51（C89）；烧录：STC-ISP。
 > 本目录两个工程已在本机（Keil C51 V9.51a + STC 设备库）**编译通过（0 Error）**，
-> HEX 统一输出到 `A大项目\HEX\`：`Wireless_TX_P2.hex`、`Wireless_RX.hex`
-> （有线两块板的 `Wired_P1.hex` / `Wired_P2.hex` 也统一输出到同一目录，
+> HEX 统一输出到 `A大项目\HEX\`：`IR_Player2.hex`、`IR_Relay.hex`
+> （有线两块板的 `USB_Player1.hex` / `USB_Player2.hex` 也统一输出到同一目录，
 >  命名/用途对照见 `HEX\README.md`）。
 
 ---
@@ -17,11 +17,11 @@
 ├─ README.md                    ← 本文件（模块总览 / 联调说明）
 ├─ HEX_A_IR_Tx/                 ← 工程1：红外发送端（替代玩家2有线手柄）
 │  ├─ main.c                    ← 唯一源文件（完整中文注释，C89）
-│  ├─ HEX_A.uvproj              ← Keil 工程（Output → ..\..\HEX\Wireless_TX_P2.hex）
+│  ├─ HEX_A.uvproj              ← Keil 工程（Output → ..\..\HEX\IR_Player2.hex）
 │  ├─ STC_BSP.lib / inc/        ← BSP 库与头文件副本（自包含）
 └─ HEX_B_IR_Rx/                 ← 工程2：红外接收端 + 串口1转发
    ├─ main.c                    ← 唯一源文件（完整中文注释，C89）
-   ├─ HEX_B.uvproj              ← Keil 工程（Output → ..\..\HEX\Wireless_RX.hex）
+   ├─ HEX_B.uvproj              ← Keil 工程（Output → ..\..\HEX\IR_Relay.hex）
    ├─ STC_BSP.lib / inc/        ← BSP 库与头文件副本（自包含）
 ```
 
@@ -36,10 +36,10 @@
 
 | HEX（统一在 `A大项目\HEX\`） | 工程 | 板子角色 | 上电身份显示 |
 |---|---|---|---|
-| `Wired_P1.hex` | MCU（Player1） | 有线玩家1 手柄 | 数码管 **1**，L0 |
-| `Wired_P2.hex` | MCU（Player2） | 有线玩家2 手柄 | 数码管 **2**，L7 |
-| `Wireless_TX_P2.hex` | 本目录 HEX_A_IR_Tx | 无线发送端（玩家2无线手柄，红外发射） | 数码管 **A**，L7 |
-| `Wireless_RX.hex` | 本目录 HEX_B_IR_Rx | 无线接收端（红外接收 + USB 转发） | 数码管 **b**，转发时 L0 闪 |
+| `USB_Player1.hex` | MCU（Player1） | 有线玩家1 手柄 | 数码管 **1**，L0 |
+| `USB_Player2.hex` | MCU（Player2） | 有线玩家2 手柄 | 数码管 **2**，L7 |
+| `IR_Player2.hex` | 本目录 HEX_A_IR_Tx | 无线发送端（玩家2无线手柄，红外发射） | 数码管 **A**，L7 |
+| `IR_Relay.hex` | 本目录 HEX_B_IR_Rx | 无线接收端（红外接收 + USB 转发） | 数码管 **b**，转发时 L0 闪 |
 
 > 无线两块板用 **A / b** 与有线的 **1 / 2** 区分：拿到任何一块板，看数码管
 > 最左位即可知道它该烧哪个 HEX、该当哪个角色，不会再混淆收发端。
@@ -55,9 +55,9 @@
     每100ms一包                                                (板载USB/CH340)
 ```
 
-- **玩家1** 仍用原有线手柄板（`HEX\Wired_P1.hex`，原接线不动）。
+- **玩家1** 仍用原有线手柄板（`HEX\USB_Player1.hex`，原接线不动）。
 - **玩家2** 用本模块：HEX-A 无线发射 + HEX-B 接收转发，替代原玩家2有线板
-  （原玩家2有线板与 `Wired_P2.hex` 不再需要接入电脑）。
+  （原玩家2有线板与 `USB_Player2.hex` 不再需要接入电脑）。
 - PC 端 `serial_handler.py` 按数据包内容自动绑定：哪个 COM 先发来 `AA 02 xx`
   合法包，就绑定为玩家2 —— 因此 **PC 端代码一行都不用改**。
 
@@ -85,8 +85,8 @@
 ## 5. 快速上手（三步）
 
 1. **烧录两块板**（详见各工程 README）：
-   - 把 `HEX\Wireless_TX_P2.hex` 烧进"玩家2无线手柄板"（发射端，数码管 A）；
-   - 把 `HEX\Wireless_RX.hex` 烧进"接收转发板"（数码管 b，接电脑 USB）。
+   - 把 `HEX\IR_Player2.hex` 烧进"玩家2无线手柄板"（发射端，数码管 A）；
+   - 把 `HEX\IR_Relay.hex` 烧进"接收转发板"（数码管 b，接电脑 USB）。
 2. **接线**：HEX-A 板载红外发射管（IR_TXD）对准 HEX-B 板载红外接收管
    （IR_RXD），距离 0.2~3 米、中间无遮挡；HEX-B 用板载 USB 线连电脑；
    HEX-A 供电可用任意 USB 口（5V），不需连电脑。
@@ -98,7 +98,7 @@
 > 与原有线手柄行为一致。
 >
 > 开始界面：按 **K1 / K2 / K3 / 导航键任意一键** 均可进入对战（bit6=K3 于 v2.6 加入，
-> 需重新烧录 `Wireless_TX_P2.hex`）。
+> 需重新烧录 `IR_Player2.hex`）。
 
 ---
 

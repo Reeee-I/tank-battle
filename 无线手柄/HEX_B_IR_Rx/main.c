@@ -31,7 +31,7 @@
  *
  * 编译环境：Keil uVision4/5 + C51（C89 规范，内存模式 Small）
  * 工程文件：main.c + STC_BSP.lib + inc 头文件目录（本工程自包含副本）
- * 生成文件：..\..\HEX\Wireless_RX.hex（统一 HEX 目录，用 STC-ISP 烧录）
+ * 生成文件：..\..\HEX\IR_Relay.hex（统一 HEX 目录，用 STC-ISP 烧录）
  *
  * 数码管身份显示：上电最左位显示 'b'（= 无线接收端 HEX-B），与有线玩家1
  *                （显示 '1'）、有线玩家2（显示 '2'）、无线发送端（显示 'A'）

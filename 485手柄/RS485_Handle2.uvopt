@@ -21,7 +21,7 @@
   </DaveTm>
 
   <Target>
-    <TargetName>HEX_B_IR_Rx</TargetName>
+    <TargetName>RS485_Handle2</TargetName>
     <ToolsetNumber>0x0</ToolsetNumber>
     <ToolsetName>MCS-51</ToolsetName>
     <TargetOption>
@@ -171,8 +171,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\main.c</PathWithFileName>
-      <FilenameWithoutPath>main.c</FilenameWithoutPath>
+      <PathWithFileName>.\main_handle.c</PathWithFileName>
+      <FilenameWithoutPath>main_handle.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -187,7 +187,7 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\STC_BSP.lib</PathWithFileName>
+      <PathWithFileName>..\MCU\STC_BSP.lib</PathWithFileName>
       <FilenameWithoutPath>STC_BSP.lib</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>

@@ -14,11 +14,13 @@ MCU/list/
 无线手柄/HEX_A_IR_Tx/list/
 无线手柄/HEX_B_IR_Rx/list/
 
-# HEX 目录下 Keil 生成的无扩展名调试镜像（同名 .hex 才是烧录文件）
-HEX/Wired_P1
-HEX/Wired_P2
-HEX/Wireless_TX_P2
-
+# HEX dir: ignore Keil intermediates, keep only .hex and README
+HEX/*
+!HEX/*.hex
+!HEX/README.md
 # --- Windows / 通用 ---
 Thumbs.db
 Desktop.ini
+
+# Keil list dirs (intermediates)
+list/

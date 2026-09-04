@@ -2,28 +2,38 @@
  * 双人坦克对战 - 手柄端程序（STC_B 学习板 / STC15F2K60S2）
  *------------------------------------------------------------------------------
  * 功能：两块完全相同的开发板分别作为玩家1/玩家2 的手柄，
- *       通过串口每 100ms 向 PC 发送一次按键状态数据包。
+ *       通过串口每 100ms 向 PC 发送一次按键状态数据包；
+ *       并接收 PC 下行的"血量帧"，把板载 LED(L0~L5) 显示为所控坦克的血条
+ *       （满血3=6灯全亮；每掉 1 血灭右侧 2 灯；死亡=全灭）。
  *
  * 区分玩家：仅通过编译宏 PLAYER_ID 区分（见下方宏定义）：
- *     PLAYER_ID = 1  → L0 亮 + 数码管最左位显示"1"，发送包头玩家号 0x01（玩家1）
- *     PLAYER_ID = 2  → L7 亮 + 数码管最左位显示"2"，发送包头玩家号 0x02（玩家2）
+ *     PLAYER_ID = 1  → 数码管最左位显示"1"，发送包头玩家号 0x01（玩家1）
+ *     PLAYER_ID = 2  → 数码管最左位显示"2"，发送包头玩家号 0x02（玩家2）
+ *   （身份显示 = 数码管 1/2；LED 专用于血量——用户需求）
  *   （推荐做法：Keil 工程建两个 Target，在 C51 编译选项 Define 中分别写
  *     PLAYER_ID=1 与 PLAYER_ID=2，编译出两个 HEX：Tank_P1.hex / Tank_P2.hex）
  *
  * 通信协议（3 字节数据包，9600 bps，8 数据位 1 停止位 无校验）：
- *     字节0 : 0xAA                        包头（固定）
- *     字节1 : 0x01(玩家1) / 0x02(玩家2)   玩家号
- *     字节2 : 按键位掩码
- *             bit0=1 左(导航左按, 左转)   bit1=1 右(导航右按, 右转)
- *             bit2=1 上(导航上按, 前进)   bit3=1 下(导航下按, 后退)
- *             bit4=1 开火(K1按下瞬间, 单发一次)
- *             bit5=1 重开请求(K2按下瞬间, 单发一次; PC 仅在结算画面处理)
- *             bit6=1 K3(按下瞬间, 单发一次; PC 仅在开始界面当作"任意键开始"输入,
- *                   对战中忽略——K3 上报是让开始界面"任一手柄按键可开始"完整生效)
+ *     上行（本板 → PC，每 100ms 一次）：
+ *         字节0 : 0xAA                        包头（固定）
+ *         字节1 : 0x01(玩家1) / 0x02(玩家2)   玩家号
+ *         字节2 : 按键位掩码
+ *                 bit0=1 左(导航左按, 左转)   bit1=1 右(导航右按, 右转)
+ *                 bit2=1 上(导航上按, 前进)   bit3=1 下(导航下按, 后退)
+ *                 bit4=1 开火(K1按下瞬间, 单发一次)
+ *                 bit5=1 重开请求(K2按下瞬间, 单发一次; PC 仅在结算画面处理)
+ *                 bit6=1 K3(按下瞬间, 单发一次; PC 仅在开始界面当作"任意键开始"
+ *                   输入, 对战中忽略——K3 上报让开始界面"任一手柄按键可开始"完整生效)
+ *     下行（PC → 本板，仅 UART_IF=0 板载 USB 通道启用）：
+ *         字节0 : 0xAA                        包头（固定）
+ *         字节1 : 0xD1(玩家1) / 0xD2(玩家2)   下行命令码（血量）
+ *         字节2 : 血量 0~3（满血=3）→ 按下方"LED 血条语义"刷新 LED
  *
  * 串口通道（编译宏 UART_IF 选择）：
- *     UART_IF = 0（默认）：板载 USB 串口1（CH340，与电脑直接USB线相连）
- *     UART_IF = 1       ：EXT 扩展口 UART2（需外接 USB-TTL 模块，P1.1=TXD2）
+ *     UART_IF = 0（默认）：板载 USB 串口1（CH340，与电脑直接USB线相连），
+ *                同时启用 PC → 板 血量下行（LED 血条联动）
+ *     UART_IF = 1       ：EXT 扩展口 UART2（需外接 USB-TTL 模块，P1.1=TXD2；
+ *                RX 可不接 → 无血量下行，LED 保持全灭）
  *
  * 注意：
  *   1) SysClock 必须与实际下载频率一致（STC-B 板为 11.0592MHz 晶振，
@@ -76,6 +86,16 @@
 #define KEY_RESTART     0x20    /* bit5：重开请求（K2，单发；PC 结算画面处理） */
 #define KEY_K3          0x40    /* bit6：K3（单发；PC 开始界面"任意键开始"用，对战中忽略） */
 
+/* PC → 板 下行帧（LED 血量联动，9600 8N1，3 字节：AA + 命令码 + 血量 0~3）：
+ *     命令码 0xD1 = 玩家1 血量、0xD2 = 玩家2 血量（与玩家号 01/02、点名码
+ *     E1/E2 永不冲突）。USB 直连接法下每块板只收到发给自己的下行帧；
+ *     本板只响应"AA + 本板命令码"的帧（接收包头已按此匹配，回调双保险）。
+ * LED 血条语义：满血(3) = L0~L5 六灯全亮；每掉 1 血灭右侧 2 灯
+ * （3→0x3F、2→0x0F、1→0x03）；死亡(0) = 全灭。身份由数码管 1/2 承担。 */
+#define DL_HP_P1        0xD1    /* 下行命令码：玩家1 血量 */
+#define DL_HP_P2        0xD2    /* 下行命令码：玩家2 血量 */
+#define DL_HP_MAX       3       /* 血量上限（满血=3 命） */
+
 /*--------------------------- 系统变量（必须定义） ---------------------------*/
 /* 必须：定义系统工作时钟频率(Hz)，与实际工作频率（STC-ISP 下载时选择）一致。
  * STC-B 学习板默认外部晶振 11.0592MHz；若改用内部IRC等频率，
@@ -83,7 +103,7 @@
 code unsigned long SysClock = 11059200;
 
 /* 选用显示模块时必须：数码管显示译码表（用户可修改/增减）。
- * 本工程未使用数码管但使用 LED，displayer 模块仍会引用该表，故必须定义。 */
+ * 数码管用于身份显示（最左位 1/2），LED 用于血量条（见下行血量部分）。 */
 #ifdef _displayer_H_
 code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,
                             0x00,0x08,0x40,0x01,0x41,0x48,
@@ -97,6 +117,48 @@ static unsigned char firePending;   /* K1 开火待发标志（按下瞬间置1�
 static unsigned char restartPending;/* K2 重开待发标志（按下瞬间置1，发完清0）   */
 static unsigned char k3Pending;     /* K3 待发标志（按下瞬间置1，发完清0）       */
 static unsigned char txBuf[3];      /* 待发送的 3 字节数据包                     */
+
+/* ---- LED 血量下行（UART_IF=0 板载 USB 才启用接收；EXT 备选无下行）---- */
+#if (UART_IF == 0)
+static unsigned char dlRxBuf[3];    /* 串口1 接收缓冲：PC 下行血量帧 */
+/* 接收包头匹配：AA + 本板命令码（只对发给自己的血量帧产生收包事件） */
+static unsigned char dlHead[2] = {PKT_HEADER, (PLAYER_ID == 1) ? DL_HP_P1 : DL_HP_P2};
+
+/* LED 血条译码：血量 0/1/2/3 → LedPrint 值（bit=1 亮）：
+ *   3 满血：L0~L5 六灯全亮；2：L0~L3；1：L0~L1；0（死亡）：全灭 */
+static code unsigned char hpLedTable[4] = {0x00, 0x03, 0x0F, 0x3F};
+
+/* 应用一帧血量：夹取 0~3 后按血条规则刷新 LED */
+static void hpLedApply(unsigned char hp)
+{
+    if (hp > DL_HP_MAX)
+    {
+        hp = DL_HP_MAX;
+    }
+    LedPrint(hpLedTable[hp]);
+}
+
+/* 串口1 收包事件：收到 AA + 本板命令码 + 血量 的 3 字节帧 → 刷新 LED 血条 */
+void myUart1Rxd_callback(void)
+{
+    if (dlRxBuf[0] != PKT_HEADER)
+    {
+        return;
+    }
+#if (PLAYER_ID == 1)
+    if (dlRxBuf[1] != DL_HP_P1)
+    {
+        return;
+    }
+#else
+    if (dlRxBuf[1] != DL_HP_P2)
+    {
+        return;
+    }
+#endif
+    hpLedApply(dlRxBuf[2]);
+}
+#endif  /* UART_IF == 0 */
 
 /*--------------------------------- 串口发送层 -------------------------------*/
 /* 按 UART_IF 选择串口1/2，统一发送接口，业务代码不感知差异 */
@@ -215,15 +277,10 @@ void main(void)
     DisplayerInit();                /* 1. 显示模块加载 */
     SetDisplayerArea(0, 7);         /*    启用 8 个扫描位（LED L0~L7 正常刷新） */
 
-    /* 2. 点亮身份 LED：板1 亮 L0，板2 亮 L7（bit=1 亮） */
-    if (PLAYER_ID == 1)
-    {
-        LedPrint(0x01);             /* L0 亮：本板为玩家1 */
-    }
-    else
-    {
-        LedPrint(0x80);             /* L7 亮：本板为玩家2 */
-    }
+    /* 2. LED 默认全灭：LED 专用于血量血条（满血6灯/掉血灭灯/死亡全灭），
+     *    上电未收到 PC 血量前全灭；身份由数码管最左位 1/2 承担（见 2b）。
+     *    （旧版 L0/L7 身份亮灯已由"数码管身份 + LED 血量"取代——用户需求） */
+    LedPrint(0x00);
     /* 2b. 数码管显示手柄号：最左一位显示 1 或 2，其余位熄灭
      *     （10 = 译码表"空"，避免上电默认的 00000000 无法区分身份） */
     Seg7Print((PLAYER_ID == 1) ? 1 : 2, 10, 10, 10, 10, 10, 10, 10);
@@ -234,11 +291,16 @@ void main(void)
 
 #if (UART_IF == 0)
     Uart1Init(9600UL);              /* 5. 串口1：板载 USB 口，9600bps 8N1 */
+    SetUart1Rxd(dlRxBuf, 3, dlHead, 2); /* 5b. 串口1 收 PC 下行血量帧
+                                             （AA+本板命令码+血量） */
 #else
     Uart2Init(9600UL, Uart2UsedforEXT); /* 5. 串口2：EXT 扩展口，9600bps 8N1 */
 #endif
 
     SetEventCallBack(enumEventSys100mS, my100mS_callback);   /* 6. 注册100ms回调 */
+#if (UART_IF == 0)
+    SetEventCallBack(enumEventUart1Rxd, myUart1Rxd_callback);/* 6b. 下行血量事件 */
+#endif
 
     MySTC_Init();                   /* 7. 系统初始化（必须，只执行一次） */
 

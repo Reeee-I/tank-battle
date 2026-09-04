@@ -1,6 +1,6 @@
 # HEX-B 工程：红外接收端 + 串口1转发
 
-> 生成文件：`..\..\HEX\Wireless_RX.hex`（统一 HEX 目录，见 `HEX\README.md` 对照表）
+> 生成文件：`..\..\HEX\IR_Relay.hex`（统一 HEX 目录，见 `HEX\README.md` 对照表）
 > 作用：接收 HEX-A 红外发送端发来的 `AA 02 xx` 3 字节数据包，
 > **原样**通过 **串口1（板载 USB 口）9600bps 8N1** 转发给 PC。
 > 收不到合法红外包时不发送任何数据。
@@ -12,11 +12,11 @@
 | 文件 | 说明 |
 |---|---|
 | `main.c` | 唯一源文件（完整中文注释，C89，无寄存器直接操作，仅用 BSP API） |
-| `HEX_B.uvproj` | Keil 工程（Target: HEX_B_IR_Rx，Output → `..\..\HEX\Wireless_RX.hex`） |
+| `HEX_B.uvproj` | Keil 工程（Target: HEX_B_IR_Rx，Output → `..\..\HEX\IR_Relay.hex`） |
 | `STC_BSP.lib` | BSP 库副本（V3.6b，与 `MCU/STC_BSP.lib` 一致） |
 | `inc/` | BSP 头文件副本：`STC15F2K60S2.H` `sys.H` `displayer.h` `IR.h` `uart1.h` |
 
-> 编译后 HEX 在 `A大项目\HEX\Wireless_RX.hex`（不在本目录内）。
+> 编译后 HEX 在 `A大项目\HEX\IR_Relay.hex`（不在本目录内）。
 
 ## 2. 程序流程
 
@@ -62,13 +62,13 @@ myIrRxd_callback(收到一个红外数据包时):
 方式 A（推荐，直接打开本工程）：
 1. 双击打开 `HEX_B.uvproj`；
 2. 按 **F7** 编译；
-3. 产物：`A大项目\HEX\Wireless_RX.hex`。
+3. 产物：`A大项目\HEX\IR_Relay.hex`。
 
 方式 B（手动核对配置清单）：
 - 芯片：**STC15F2K60S2 Series**（STC 设备库）；
 - 内存模式 Memory Model = **Small**；优化 Optimize = **Level 8**；
 - C51 → Include Paths = `.\inc`；Output 勾选 **Create HEX File**；
-- Output Directory = `..\..\HEX\`，Output Name = `Wireless_RX`；
+- Output Directory = `..\..\HEX\`，Output Name = `IR_Relay`；
 - 工程文件：`main.c` + `STC_BSP.lib`（Add Existing Files 时类型选 *）；
 - C51 Define：`WIRELESS_RX`（仅用于区分工程、防止共享输出目录时误用旧 obj）。
 
@@ -76,7 +76,7 @@ myIrRxd_callback(收到一个红外数据包时):
 
 1. 单片机型号选 **STC15F2K60S2**；
 2. 频率选 **11.0592MHz**（外部晶振，与代码 `SysClock` 一致）；
-3. 载入 `HEX\Wireless_RX.hex` → 下载/编程（必要时按提示重新上电）；
+3. 载入 `HEX\IR_Relay.hex` → 下载/编程（必要时按提示重新上电）；
 4. 烧完 **关闭 STC-ISP**（否则 COM 口被占用，游戏打不开）。
 
 ## 7. 功能核对清单

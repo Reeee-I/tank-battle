@@ -43,6 +43,29 @@ class FakeClock(object):
         self.t += dt
 
 
+class SpyHub(object):
+    """记录 set_hp 调用（LED 血量下行）的假串口集线器；
+    只读查询全部返回"空态"，使 Game 在无真实板子时也能驱动。"""
+
+    def __init__(self):
+        self.calls = []              # [(玩家号, 血量), ...] 按 set_hp 顺序
+
+    def set_hp(self, pid, hp):
+        self.calls.append((pid, hp))
+
+    def get_control(self, pid, now=None):
+        return (0, False)
+
+    def bound_count(self):
+        return 0
+
+    def is_bound(self, pid):
+        return False
+
+    def binding_port(self, pid):
+        return None
+
+
 def run_frames(game, clock, n):
     """推进 n 帧（每帧 1/60 秒）"""
     for _ in range(n):
@@ -339,6 +362,75 @@ def test_hub_heartbeat():
     assert hub.bound_count() == 1
     assert hub.is_bound(PLAYER2) is False
     print('  [PASS] 串口心跳/断线判定')
+
+
+def _dl_hit_once(g, clock, target_x, target_y, frames=15):
+    """玩家1 朝目标位置打一发（命中 → 触发血量下行推送）"""
+    t2 = g.tanks[PLAYER2]
+    t2.x, t2.y, t2.angle = float(target_x), float(target_y), 180.0
+    g._inject[PLAYER1] = BIT_FIRE
+    run_frames(g, clock, 1)
+    g._inject[PLAYER1] = 0
+    run_frames(g, clock, frames)
+
+
+def test_led_hp_downlink_push():
+    """手柄 LED 血量联动（PC 下行推送时机）：
+    直开开局推满血；命中→2、死亡→0 推最新血量；血包回血→推；
+    K2 重开后两板重新推满血 3。hub=None/无板不影响（键盘模式）。"""
+    hub = SpyHub()
+    g = Game(hub=hub, keyboard=False)     # menu=False：开局即推满血
+    clock = FakeClock()
+    g.set_clock(clock)
+    assert hub.calls == [(PLAYER1, 3), (PLAYER2, 3)], hub.calls
+    hub.calls.clear()
+
+    # 命中：玩家2 3→2 → 应推送 (玩家2, 2)
+    _dl_hit_once(g, clock, 200, 300)
+    assert (PLAYER2, 2) in hub.calls, hub.calls
+    assert g.tanks[PLAYER2].lives == 2
+    hub.calls.clear()
+    clock.advance(1.2)                            # 等重生无敌(1s)结束
+
+    # 死亡：玩家2 压到 1 命再被打中 → 归零推 0、对局结束
+    g.tanks[PLAYER2].lives = 1
+    _dl_hit_once(g, clock, 200, 300)
+    assert (PLAYER2, 0) in hub.calls, hub.calls
+    assert g.game_over and g.tanks[PLAYER2].lives == 0
+    hub.calls.clear()
+
+    # K2 重开：两板重新推满血 3
+    g._inject[PLAYER1] = BIT_RESTART
+    run_frames(g, clock, 1)
+    assert hub.calls == [(PLAYER1, 3), (PLAYER2, 3)], hub.calls
+    assert not g.game_over
+    print('  [PASS] LED血量下行：开局满血/命中/死亡/重开 推送时机正确')
+
+
+def test_led_hp_downlink_heal_and_menu():
+    """血包回血也推最新血量；开始界面期间不推（LED 保持全灭），
+    正式开局（任一手柄按键/点击）才推满血。"""
+    hub = SpyHub()
+    g = Game(hub=hub, keyboard=False, menu=True)   # menu=True：开局不推
+    clock = FakeClock()
+    g.set_clock(clock)
+    assert hub.calls == [], '开始界面期间不应推送（LED 保持全灭）'
+    g._inject[PLAYER1] = BIT_K3
+    run_frames(g, clock, 1)                       # 任意键开始 → 推满血
+    assert not g.menu_active
+    assert hub.calls == [(PLAYER1, 3), (PLAYER2, 3)], hub.calls
+    hub.calls.clear()
+
+    # 血包回血：玩家1 1 命 → 拾取 +1 → 推送 (玩家1, 2)
+    g.next_powerup_at = clock() + 1000.0          # 冻结生成器，防干扰
+    t1 = g.tanks[PLAYER1]
+    t1.lives = 1
+    t1.x, t1.y = 220.0, 200.0                     # 开阔处停坦克
+    g.powerups.append(PowerUp(220.0, 200.0, KIND_HEALTH, clock()))
+    run_frames(g, clock, 1)
+    assert t1.lives == 2, '血包 +1 命'
+    assert (PLAYER1, 2) in hub.calls, hub.calls
+    print('  [PASS] LED血量下行：血包回血推送 / 开始界面不推·开局才推满血')
 
 
 def pu_game():
@@ -642,6 +734,8 @@ def main():
         test_restart_on_click,
         test_game_over_and_reset,
         test_hub_heartbeat,
+        test_led_hp_downlink_push,
+        test_led_hp_downlink_heal_and_menu,
         test_powerup_spawn_schedule, test_powerup_expiry,
         test_powerup_health_pickup, test_powerup_speed,
         test_powerup_cannon, test_powerup_shield_blocks_once,
