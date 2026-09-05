@@ -1,7 +1,7 @@
 # --- Python ---
 __pycache__/
 *.pyc
-PC/debug_keys.log
+02_上位机程序/debug_keys.log
 
 # --- Keil / C51 用户态与中间产物 ---
 *.uvgui
@@ -10,17 +10,15 @@ PC/debug_keys.log
 *.lnp
 *.plg
 *.obj
-MCU/list/
-无线手柄/HEX_A_IR_Tx/list/
-无线手柄/HEX_B_IR_Rx/list/
+
+# Keil 各工程 list 目录（.lst/.m51 中间产物，任意深度）
+list/
 
 # HEX dir: ignore Keil intermediates, keep only .hex and README
 HEX/*
 !HEX/*.hex
 !HEX/README.md
+
 # --- Windows / 通用 ---
 Thumbs.db
 Desktop.ini
-
-# Keil list dirs (intermediates)
-list/
