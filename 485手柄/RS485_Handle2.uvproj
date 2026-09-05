@@ -360,6 +360,11 @@
               <FileType>4</FileType>
               <FilePath>..\MCU\STC_BSP.lib</FilePath>
             </File>
+            <File>
+              <FileName>sound_effect.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\sound_effect.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>
