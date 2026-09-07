@@ -201,6 +201,7 @@ class Game(object):
         self._bullet_cache = {}         # 子弹发光表面缓存
         self._powerup_cache = {}        # 道具发光表面缓存
         self._fps = 0.0
+        self._field = None              # 逻辑战场脱机表面(渲染用)
         self.reset()
         # 非"开始界面"直开模式（menu=False，测试/直连用）：开局即把满血
         # 下行给已绑定的手柄板（真机入口 main.py 用 menu=True，改为
@@ -672,18 +673,24 @@ class Game(object):
 
     # ------------------------------ 场景 ------------------------------
     def draw(self):
-        """绘制一帧（需要 pygame 与 screen）"""
+        """绘制一帧（窗口=逻辑战场 800x600, 直接绘制; 需要 pygame 与 screen）"""
         if self.screen is None:
             return
         import pygame
+        import assets
         surf = self.screen
         now = self._now_fn()
+        # 战场(封面裁剪地面 + 网格 + 边框 + 出生点 + 障碍等比不裁切)
         self._draw_arena_background(surf, now)
         self._draw_powerups(surf, now)
         self._draw_tanks_and_bullets(surf, now)
         self._draw_toasts(surf, now)
+        # 边框(拉伸到窗口, 中央透明露出战场; 自带 TANK BATTLE 金板)
+        fr = assets.get_frame()
+        if fr is not None:
+            surf.blit(fr, (0, 0))
         if self.menu_active:
-            # 开始界面：不画 HUD/结算，直接覆盖菜单（field 背景透出增加氛围）
+            # 开始界面：覆盖菜单
             self._draw_menu(surf, now)
             return
         # HUD
@@ -693,10 +700,17 @@ class Game(object):
             self._draw_game_over(surf)
 
     def _draw_arena_background(self, surface, now):
-        """背景网格 + 战场边框 + 出生点光环 + 障碍物"""
+        """地面(封面裁剪) + 战场边框 + 出生点光环 + 障碍物(整块等比缩放不裁切)"""
         import pygame
+        import assets
         surf = surface
-        surf.fill(self.BG_COLOR)
+        # 地面(缺素材回退纯色)
+        floor = assets.get_floor()
+        if floor is not None:
+            surf.blit(floor, (0, 0))
+        else:
+            surf.fill(self.BG_COLOR)
+        # 淡网格增强战场感(逻辑 40px 一格)
         for gx in range(0, WINDOW_W, 40):
             pygame.draw.line(surf, self.GRID_COLOR, (gx, 0), (gx, WINDOW_H))
         for gy in range(0, WINDOW_H, 40):
@@ -707,14 +721,27 @@ class Game(object):
         for pid, (sx, sy, _a) in SPAWNS.items():
             color = self.P1_COLOR if pid == PLAYER1 else self.P2_COLOR
             pygame.draw.circle(surf, color, (int(sx), int(sy)), 26, 2)
-        # 障碍物
-        for ob in self.obstacles:
-            rect = pygame.Rect(int(ob.x), int(ob.y), int(ob.w), int(ob.h))
-            pygame.draw.rect(surf, self.OB_COLOR, rect, border_radius=8)
-            pygame.draw.rect(surf, self.OB_HI, rect, 2, border_radius=8)
-            pygame.draw.line(surf, self.OB_HI,
-                             (rect.x + 6, rect.y + 3), (rect.right - 6, rect.y + 3), 2)
-            pygame.draw.rect(surf, self.OB_EDGE, rect, 4, border_radius=8)
+        # 障碍物: 40px 网格平铺, 每格按 (w/nc, h/nr) 精确铺满整块碰撞箱
+        # → 贴图视觉大小 == 碰撞箱大小, 方块近似方形(不拉伸不裁切整块)
+        block = assets.get_obstacle()
+        if block is not None:
+            bw, bh = block.get_size()
+            CELL0 = 40.0
+            for ob in self.obstacles:
+                w, h = ob.w, ob.h
+                nc = max(1, int(round(w / CELL0)))
+                nr = max(1, int(round(h / CELL0)))
+                cw, ch = w / nc, h / nr
+                cell_img = block if (int(cw), int(ch)) == (bw, bh) else \
+                    pygame.transform.smoothscale(block, (max(1, int(cw)), max(1, int(ch))))
+                for i in range(nc):
+                    for j in range(nr):
+                        surf.blit(cell_img, (int(ob.x + i * cw), int(ob.y + j * ch)))
+        else:
+            for ob in self.obstacles:
+                rect = pygame.Rect(int(ob.x), int(ob.y), int(ob.w), int(ob.h))
+                pygame.draw.rect(surf, self.OB_COLOR, rect, border_radius=8)
+                pygame.draw.rect(surf, self.OB_HI, rect, 2, border_radius=8)
 
     def _draw_powerups(self, surface, now):
         """道具（发光图标；剩余不足 3s 时闪烁提醒即将消失）"""
@@ -753,75 +780,78 @@ class Game(object):
             surface.blit(img, (x - img.get_width() // 2, y))
 
     def _draw_menu(self, surface, now):
-        """开始界面：标题 / 操作说明 / 道具简介 / 闪烁"开始"提示。
-        半透明遮罩叠在开局场景上；按任意键/点击/手柄按键进入对战。
-        （位置常量与 tests/text_layout_qa.py 的 texts_menu() 保持一致）"""
+        """开始界面(4:3)：TANK BATTLE 标题 / 中文副题 / 操作卡片 / 闪烁开始。
+        半透明遮罩叠在开局场景+边框上；按任意键/点击/手柄按键进入对战。"""
         import pygame
-        veil = pygame.Surface((WINDOW_W, WINDOW_H), pygame.SRCALPHA)
-        veil.fill((12, 14, 22, 178))
+        import assets
+        SW, SH = assets.SCREEN_W, assets.SCREEN_H
+        veil = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        veil.fill((8, 10, 16, 154))
         surface.blit(veil, (0, 0))
-        cx = WINDOW_W / 2
-        # 标题 + 副标题
-        self._text(surface, self._font(52, bold=True), '双人坦克对战',
-                   (235, 240, 255), cx, 96, align='center')
-        self._text(surface, self._font(17), 'STC-B 学习板手柄 · 双人同屏对战',
-                   self.TEXT_DIM, cx, 178, align='center')
-        # 操作说明（玩家1蓝 / 玩家2红）
-        self._text(surface, self._font(15),
-                   '玩家1（蓝）  手柄：导航键转向/移动 · K1 开火      键盘：WASD + 空格',
-                   self.P1_COLOR, cx, 240, align='center')
-        self._text(surface, self._font(15),
-                   '玩家2（红）  手柄：导航键转向/移动 · K1 开火      键盘：方向键 + 回车',
-                   self.P2_COLOR, cx, 266, align='center')
-        # 道具简介
+        cx = SW / 2
+        # 大标题(素材 logo; 缺则回退中文)
+        title = assets.get_title(72)
+        if title is not None:
+            surface.blit(title, (int(cx - title.get_width() / 2), 64))
+        self._text(surface, self._font(26, bold=True), '双人坦克对战',
+                   (255, 200, 90), cx, 168, align='center')
+        self._text(surface, self._font(18), 'STC-B 学习板手柄 · 双人同屏对战',
+                   self.TEXT_DIM, cx, 206, align='center')
+        # 操作卡片
+        panel = pygame.Surface((620, 92), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (16, 22, 36, 208), panel.get_rect(), border_radius=12)
+        pygame.draw.rect(panel, (120, 150, 190, 150), panel.get_rect(), 2,
+                         border_radius=12)
+        surface.blit(panel, (int(cx - 310), 238))
+        self._text(surface, self._font(18),
+                   '玩家1（蓝）  手柄：导航键转向/移动 · K1 开火   键盘：WASD + 空格',
+                   self.P1_COLOR, cx, 254, align='center')
+        self._text(surface, self._font(18),
+                   '玩家2（红）  手柄：导航键转向/移动 · K1 开火   键盘：方向键 + 回车',
+                   self.P2_COLOR, cx, 284, align='center')
         self._text(surface, self._font(14),
-                   '道具：碾过发光图标即拾取 —— 加速 / 炮弹增强(命中-2血) / 血包(+1命) / 护盾(挡1发)',
-                   self.TEXT_DIM, cx, 304, align='center')
-        # 开始提示（闪烁亮/暗两相）
+                   '道具：碾过发光图标即拾取 — 加速 / 炮弹增强(命中-2血) / 血包(+1命) / 护盾(挡1发)',
+                   self.TEXT_DIM, cx, 356, align='center')
         blink = int(now * 2.0) % 2 == 0
-        self._text(surface, self._font(20, bold=True), '按任意键 或 点击鼠标 开始',
-                   (235, 240, 255) if blink else self.TEXT_DIM,
-                   cx, 376, align='center')
-        self._text(surface, self._font(13),
+        self._text(surface, self._font(24, bold=True), '按任意键 或 点击鼠标 开始',
+                   (250, 250, 255) if blink else self.TEXT_DIM, cx, 420, align='center')
+        self._text(surface, self._font(15),
                    '对局结束后：点击鼠标 或 任一手柄按 K2 再来一局',
-                   self.TEXT_DIM, cx, 424, align='center')
-        self._text(surface, self._font(13), 'Esc 退出',
-                   self.TEXT_DIM, cx, 560, align='center')
+                   self.TEXT_DIM, cx, 464, align='center')
 
     def _draw_tank(self, surface, pid, tank, now):
         import pygame
-        import math
-        x, y, ang = tank.x, tank.y, tank.angle
-        rad = math.radians(ang)
-        base = self.P1_COLOR if pid == PLAYER1 else self.P2_COLOR
-        edge = (20, 40, 90) if pid == PLAYER1 else (110, 22, 22)
+        import assets
+        x, y = tank.x, tank.y
         h = TANK_SIZE / 2.0
-
-        # 车体（旋转矩形多边形）
-        corners = []
-        for ox, oy in ((-h, -h), (h, -h), (h, h), (-h, h)):
-            corners.append((x + ox * math.cos(rad) - oy * math.sin(rad),
-                            y + ox * math.sin(rad) + oy * math.cos(rad)))
-        pts = [(int(px), int(py)) for px, py in corners]
-        pygame.draw.polygon(surface, base, pts)
-        pygame.draw.polygon(surface, edge, pts, 2)
-
-        # 炮管（深色粗线，末端与子弹出膛点(muzzle_point=半长+8)视觉衔接）
-        bx = x + math.cos(rad) * (h + 6.0)
-        by = y + math.sin(rad) * (h + 6.0)
-        pygame.draw.line(surface, self.GUN_COLOR,
-                         (int(x + math.cos(rad) * 4.0), int(y + math.sin(rad) * 4.0)),
-                         (int(bx), int(by)), 5)
-        # 炮口高亮
-        pygame.draw.circle(surface, (200, 208, 224),
-                           (int(bx), int(by)), 3)
-
-        # 重生无敌：呼吸闪烁白圈（重生保护，最多 1s）
+        sp = assets.get_tank(pid, tank.angle)
+        if sp is not None:
+            surface.blit(sp, (int(x - sp.get_width() / 2),
+                              int(y - sp.get_height() / 2)))
+        else:
+            # 回退: 矢量坦克(缺素材)
+            import math
+            rad = math.radians(tank.angle)
+            base = self.P1_COLOR if pid == PLAYER1 else self.P2_COLOR
+            edge = (20, 40, 90) if pid == PLAYER1 else (110, 22, 22)
+            corners = []
+            for ox, oy in ((-h, -h), (h, -h), (h, h), (-h, h)):
+                corners.append((x + ox * math.cos(rad) - oy * math.sin(rad),
+                                y + ox * math.sin(rad) + oy * math.cos(rad)))
+            pts = [(int(px), int(py)) for px, py in corners]
+            pygame.draw.polygon(surface, base, pts)
+            pygame.draw.polygon(surface, edge, pts, 2)
+            bx = x + math.cos(rad) * (h + 6.0)
+            by = y + math.sin(rad) * (h + 6.0)
+            pygame.draw.line(surface, self.GUN_COLOR,
+                             (int(x + math.cos(rad) * 4.0), int(y + math.sin(rad) * 4.0)),
+                             (int(bx), int(by)), 5)
+        # 重生无敌白圈(上衣层, 与贴图无关)
         if now < tank.invincible_until:
             if int(now * 8) % 2 == 0:
                 pygame.draw.circle(surface, (255, 255, 255),
                                    (int(x), int(y)), int(h + 8), 2)
-        # 道具护盾：青色粗环（可挡 1 发；与重生无敌白圈区分，闪烁更慢）
+        # 道具护盾青环
         if now < tank.shield_until:
             if int(now * 6) % 2 == 0:
                 pygame.draw.circle(surface, self.POWERUP_COLORS[KIND_SHIELD],
@@ -851,8 +881,43 @@ class Game(object):
         return self._bullet_cache[key]
 
     def _draw_bullet(self, surface, pid, bullet):
-        surf, side = self._bullet_surface(pid, boosted=bullet.damage > 1)
-        surface.blit(surf, (int(bullet.x) - side // 2, int(bullet.y) - side // 2))
+        """彗尾弹(蓝/红分色, 红/蓝同尺寸; 增强=更大+白热核心+粗色环)"""
+        import math
+        color = self.P1_COLOR if pid == PLAYER1 else self.P2_COLOR
+        ang = math.degrees(math.atan2(bullet.vy, bullet.vx))
+        boosted = bullet.damage > 1
+        # 视觉半径: 普通=9, 增强=12(同色同尺寸; 差异只在普通 vs 增强)
+        self._comet(surface, bullet.x, bullet.y, ang, color,
+                    bull_radius=(12 if boosted else 9), boosted=boosted)
+
+    @staticmethod
+    def _comet(surface, x, y, ang, color, bull_radius=9, boosted=False):
+        """程序化彗尾: 圆头 + 渐隐焰尾。boosted=炮弹增强(更大+白热+粗色环)。"""
+        import pygame
+        import math
+        rad = math.radians(ang)
+        r = bull_radius
+        tail = r * 8.0 if boosted else r * 6.0
+        # 焰尾(由远及近渐隐)
+        steps = 11 if boosted else 8
+        for i in range(steps, 0, -1):
+            t = i / float(steps)
+            px = x - math.cos(rad) * tail * (1.0 - t)
+            py = y - math.sin(rad) * tail * (1.0 - t)
+            rr = max(1, int(r * 0.6 * t))
+            a = pygame.Surface((rr * 2 + 2, rr * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(a, (*color, int(150 * t)), (rr + 1, rr + 1), rr)
+            surface.blit(a, (int(px) - rr - 1, int(py) - rr - 1))
+        head = tuple(min(255, v + 50) for v in color)
+        pygame.draw.circle(surface, head, (int(x), int(y)), int(r * 1.08))
+        if boosted:
+            # 白热核心 + 粗色环(明显更大更亮, 一眼区分)
+            pygame.draw.circle(surface, (255, 255, 255), (int(x), int(y)), int(r * 0.72))
+            pygame.draw.circle(surface, color, (int(x), int(y)), int(r * 1.32), 3)
+            pygame.draw.circle(surface, (255, 255, 240), (int(x), int(y)), max(1, int(r * 0.42)))
+        else:
+            pygame.draw.circle(surface, (255, 255, 255), (int(x), int(y)), max(1, int(r * 0.4)))
+            pygame.draw.circle(surface, color, (int(x), int(y)), int(r * 0.72))
 
     # ------------------------------ 道具渲染 ------------------------------
     def _powerup_surface(self, kind):
@@ -899,34 +964,31 @@ class Game(object):
 
     # ------------------------------ HUD ------------------------------
     def _draw_hud(self, surface, now):
+        import assets
+        SW, SH = assets.SCREEN_W, assets.SCREEN_H
         for pid in (PLAYER1, PLAYER2):
             self._draw_player_hud(surface, pid, now)
-        # 顶部中央：连接/对战状态
-        if not self.game_over:
-            desc = []
-            for pid in (PLAYER1, PLAYER2):
-                desc.append('玩家%d:%s' % (pid, self._conn_desc(pid)))
-            self._text(surface, self._font(15), '   '.join(desc),
-                       self.TEXT_COLOR, WINDOW_W / 2, 12, align='center')
-        # 等待提示（串口模式且尚无任何板子绑定）
+        # 等待提示
         if (self.hub is not None and not self.game_over and
                 self.hub.bound_count() == 0):
-            self._text(surface, self._font(17), '等待手柄连接… 给两块开发板上电后自动识别',
-                       self.TEXT_DIM, WINDOW_W / 2, WINDOW_H / 2 - 60,
-                       align='center')
-        # 底部操作提示（居中，位于 FPS 上方一行，避免与右下角 FPS 重叠）
+            self._text(surface, self._font(17),
+                       '等待手柄连接… 给两块开发板上电后自动识别',
+                       self.TEXT_DIM, SW / 2, SH / 2 - 6, align='center')
+        # 底部：地图名(左) / 比分 / FPS(右)
         hint = ('手柄：导航键=转向/移动  K1=开火      '
                 '键盘：P1 WASD+空格   P2 方向键+回车      Esc=退出')
-        self._text(surface, self._font(13), hint, self.TEXT_DIM,
-                   WINDOW_W / 2, WINDOW_H - 48, align='center')
-        # FPS（右下角）
-        self._text(surface, self._font(15),
-                   '%4.1f FPS' % self._fps, self.TEXT_DIM,
-                   WINDOW_W - 14, WINDOW_H - 28, align='right')
-        # 当前地图名（左下角，随机地图时便于认出本局地图）
-        self._text(surface, self._font(13),
-                   '地图·%s' % self.map_name, self.TEXT_DIM,
-                   16, WINDOW_H - 28, align='left')
+        self._text(surface, self._font(10), hint, self.TEXT_DIM,
+                   SW / 2, SH - 14, align='center')
+        self._text(surface, self._font(13), '地图·%s' % self.map_name,
+                   self.TEXT_DIM, 40, SH - 36, align='left')
+        self._text(surface, self._font(21, bold=True),
+                   '比分 %d' % self.tanks[PLAYER1].score,
+                   self.P1_COLOR, 240, SH - 52, align='center')
+        self._text(surface, self._font(21, bold=True),
+                   '比分 %d' % self.tanks[PLAYER2].score,
+                   self.P2_COLOR, 560, SH - 52, align='center')
+        self._text(surface, self._font(16), '%4.1f FPS' % self._fps,
+                   self.TEXT_DIM, SW - 22, SH - 36, align='right')
 
     def _conn_desc(self, pid):
         """生成玩家连接状态描述文本（在线/断开/等待/键盘）"""
@@ -938,17 +1000,43 @@ class Game(object):
         port = self.hub.binding_port(pid) or '?'
         return ('%s 在线' % port) if online else ('%s 断开!' % port)
 
+    def _draw_avatar(self, surface, x, y, pid):
+        """正方形坦克头像(覆盖被拉伸的边框角部图标)"""
+        import pygame
+        import assets
+        side = 66
+        pad = pygame.Surface((side, side), pygame.SRCALPHA)
+        pygame.draw.rect(pad, (16, 22, 36, 230), pad.get_rect(), border_radius=10)
+        pygame.draw.rect(pad, (150, 170, 200, 190), pad.get_rect(), 2, border_radius=10)
+        sp = assets.get_tank(pid, 0.0 if pid == PLAYER1 else 180.0)
+        if sp is not None:
+            inner = side - 16
+            # 等比缩放进方形框
+            scale = min(inner / sp.get_width(), inner / sp.get_height())
+            sc = pygame.transform.smoothscale(
+                sp, (max(1, int(sp.get_width() * scale)),
+                     max(1, int(sp.get_height() * scale))))
+            pad.blit(sc, (side // 2 - sc.get_width() // 2,
+                          8 + (inner - sc.get_height()) // 2))
+        surface.blit(pad, (int(x), int(y)))
+
     def _draw_player_hud(self, surface, pid, now):
-        """左上（玩家1）/右上（玩家2）信息块：名称/连接点/红心/得分"""
+        """左上(玩家1)/右上(玩家2)：正方形头像 + 名称 + 心形生命 + 增益栏"""
+        import pygame
+        import assets
+        SW = assets.SCREEN_W
         tank = self.tanks[pid]
         color = self.P1_COLOR if pid == PLAYER1 else self.P2_COLOR
+        name_color = (120, 200, 255) if pid == PLAYER1 else (255, 120, 110)
         align = 'left' if pid == PLAYER1 else 'right'
-        x = 16 if pid == PLAYER1 else WINDOW_W - 16
-
-        # 第1行：名称 + 连接状态点 + 连接描述
-        self._text(surface, self._font(17, bold=True), '玩家%d' % pid,
-                   color, x, 12, align=align)
-        dot_x = (x + 8 + 62) if pid == PLAYER1 else (x - 8 - 62)
+        is1 = (pid == PLAYER1)
+        # 正方形头像
+        self._draw_avatar(surface, 14 if is1 else SW - 14 - 66, 12, pid)
+        x = 92 if is1 else SW - 92
+        # 名称 + 连接点(灯放在"PLAYER n"右侧, 避开"玩家n"文字)
+        r = self._text(surface, self._font(20, bold=True), 'PLAYER %d' % pid,
+                       name_color, x, 14, align=align)
+        self._text(surface, self._font(14), '玩家%d' % pid, color, x, 40, align=align)
         if self.hub is None:
             dot_c = self.GRAY
         elif not self.hub.is_bound(pid):
@@ -956,41 +1044,37 @@ class Game(object):
         else:
             _m, online = self.hub.get_control(pid)
             dot_c = self.GREEN if online else self.ORANGE
-        import pygame
-        pygame.draw.circle(surface, dot_c, (int(dot_x), 22), 5)
-
-        # 第2行：红心（实心=剩余生命，空心=已损失）
-        hy = 44
-        gap = 22
-        if pid == PLAYER1:
-            hx0 = 16
-            for i in range(START_LIVES):
-                c = color if i < tank.lives else self.GRAY
-                self._heart(surface, hx0 + i * gap, hy, 16, c)
-        else:
-            for i in range(START_LIVES):
-                c = color if i < tank.lives else self.GRAY
-                self._heart(surface, x - 16 - (START_LIVES - 1 - i) * gap, hy, 16, c)
-
-        # 第3行：得分 / 连接描述
-        self._text(surface, self._font(14), '得分 %d' % tank.score,
-                   self.TEXT_COLOR, x, 62, align=align)
+        dot_x = (r.right + 10) if is1 else (r.left - 10)
+        pygame.draw.circle(surface, dot_c, (int(dot_x), r.centery), 5)
+        # 心形生命(蓝/红/灰空心)
+        hy = 72
+        gap = 30
+        hpx = 96 if is1 else SW - 96
+        for i in range(START_LIVES):
+            if is1:
+                state = 'p1' if i < tank.lives else 'empty'
+                pos = hpx + i * gap
+            else:
+                state = 'p2' if i < tank.lives else 'empty'
+                pos = hpx - (START_LIVES - 1 - i) * gap
+            im = assets.get_heart(state)
+            if im is not None:
+                surface.blit(im, (int(pos - im.get_width() / 2), hy))
+            else:
+                self._heart(surface, pos, hy + 13, 14,
+                            color if state != 'empty' else self.GRAY)
+        # COM 端口说明(在双方血条下方, 不与其余元素重叠)
         self._text(surface, self._font(12), self._conn_desc(pid),
-                   self.TEXT_DIM, x, 80, align=align)
-        # 第4行：道具增益栏（加速/炮强/护盾 图标文本 + 剩余秒数）
+                   self.TEXT_DIM, x, 98, align=align)
+        # 增益栏
         self._draw_buff_bar(surface, pid, now)
 
     def _draw_buff_bar(self, surface, pid, now):
-        """当前生效中的道具增益：'加速 5s / 炮强 4s / 护盾 8s' 一行
-        （左上靠左、右上靠右排列；无增益时不绘制，避免占位噪点）。
-
-        倒计时：显示向上取整的剩余整秒（6→5→…→1），归零瞬间该增益恰好到期，
-        与效果判定（now < *_until）共用同一时钟，显示与效果严格同步。
-        """
+        """当前生效中的道具增益：'加速 5s / 炮强 4s / 护盾 8s' 一行"""
         t = self.tanks[pid]
         buffs = []
         if now < t.speed_until:
-            buffs.append((KIND_SPEED, t.speed_until))      # 存绝对到期时刻
+            buffs.append((KIND_SPEED, t.speed_until))
         if now < t.cannon_until:
             buffs.append((KIND_CANNON, t.cannon_until))
         if now < t.shield_until:
@@ -1001,17 +1085,19 @@ class Game(object):
         for kind, until in buffs:
             secs = self._buff_seconds(until, now)
             tokens.append((kind, '%s %ds' % (BUFF_SHORT_NAMES[kind], secs)))
-        font = self._font(12)
-        y = 102
-        gap = 10
+        font = self._font(13)
+        y = 120
+        gap = 12
+        import assets
+        SW = assets.SCREEN_W
         if pid == PLAYER1:
-            x = 16
+            x = 92
             for kind, text in tokens:
                 r = self._text(surface, font, text,
                                self.POWERUP_COLORS[kind], x, y)
                 x = r.right + gap
         else:
-            x = WINDOW_W - 16
+            x = SW - 92
             for kind, text in reversed(tokens):
                 r = self._text(surface, font, text,
                                self.POWERUP_COLORS[kind], x, y, align='right')
@@ -1025,24 +1111,31 @@ class Game(object):
 
     def _draw_game_over(self, surface):
         import pygame
+        import assets
+        SW, SH = assets.SCREEN_W, assets.SCREEN_H
         winner = self.tanks[self.winner]
-        color = self.P1_COLOR if self.winner == PLAYER1 else self.P2_COLOR
+        name_color = (120, 200, 255) if self.winner == PLAYER1 else (255, 120, 110)
         # 半透明遮罩
-        veil = pygame.Surface((WINDOW_W, WINDOW_H), pygame.SRCALPHA)
-        veil.fill((10, 12, 18, 160))
+        veil = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        veil.fill((6, 8, 14, 168))
         surface.blit(veil, (0, 0))
-        # 中央面板
-        cx, cy = WINDOW_W / 2, WINDOW_H / 2
+        # 中央金属面板
+        cx, cy = SW / 2, SH / 2
+        panel = pygame.Surface((520, 260), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (14, 20, 32, 224), panel.get_rect(), border_radius=16)
+        pygame.draw.rect(panel, (150, 170, 200, 170), panel.get_rect(), 3,
+                         border_radius=16)
+        surface.blit(panel, (int(cx - 260), int(cy - 130)))
         self._text(surface, self._font(46, bold=True),
-                   '玩家%d 获胜！' % self.winner, color,
-                   cx, cy - 70, align='center')
-        self._text(surface, self._font(20),
+                   '玩家%d 获胜！' % self.winner, name_color,
+                   cx, cy - 90, align='center')
+        self._text(surface, self._font(24),
                    '得分 %d : %d' % (self.tanks[PLAYER1].score,
                                      self.tanks[PLAYER2].score),
-                   self.TEXT_COLOR, cx, cy - 8, align='center')
-        self._text(surface, self._font(17),
+                   self.TEXT_COLOR, cx, cy - 16, align='center')
+        self._text(surface, self._font(18),
                    '点击鼠标 或 任一手柄按 K2 重新开始', self.TEXT_DIM,
-                   cx, cy + 34, align='center')
-        self._text(surface, self._font(14),
+                   cx, cy + 26, align='center')
+        self._text(surface, self._font(15),
                    '按 Esc 键退出', self.TEXT_DIM,
                    cx, cy + 62, align='center')

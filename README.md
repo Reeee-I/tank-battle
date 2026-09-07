@@ -111,12 +111,14 @@ A大项目/
 
 ### 02_上位机程序 —— PC 端
 - 模块划分：`main.py`（入口）→ `serial_handler.py`（串口链路，独立线程）→
-  `game.py`（游戏世界与渲染）→ `tank/bullet/obstacle/powerup`（实体类）。
+  `game.py`（游戏世界与渲染）→ `tank/bullet/obstacle/powerup`（实体类）；
+  `assets.py`（素材加载/缓存/旋转，缺素材自动回退矢量画法）。
 - `tests/`：无需硬件的自动化回归（用法见 `03_文档/06_用户手册/使用说明.md`）。
 - `tools/`：串口/蓝牙调试与桥接工具（`serial_probe.py` 裸监听；**`ble_bridge.py`**
   为蓝牙手柄 PC 端桥接部件，配套 `wait_link.py`、`send_led_hp.py`、
   `fetch_bleak_deps.py` 与本地依赖 `_bleak_deps/`）。
-- `素材/`：UI 素材（含 空血/红方/蓝方血量素材.png 等）。
+- `素材/`：UI 素材（含 空血/红方/蓝方血量素材.png 等；由 `assets.py` 加载渲染：
+  蓝/红像素坦克、心形生命、金属边框、地面、Tank Battle 标题、障碍方块）。
 
 ### 03_文档 —— 文档中心（详细索引见下节）
 

@@ -58,8 +58,9 @@ def main():
     args = parse_args()
     preferred = [c for c in (args.p1, args.p2) if c]
 
-    # pygame 初始化（窗口 800x600，标题“双人坦克对战”）
+    # pygame 初始化（窗口 1280x720 宽屏，标题"双人坦克对战"）
     import pygame
+    import assets
     from serial_handler import SerialHub
     from game import Game, WINDOW_W, WINDOW_H, MAPS
 
@@ -68,7 +69,7 @@ def main():
         return 1
 
     pygame.init()
-    screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
+    screen = pygame.display.set_mode((assets.SCREEN_W, assets.SCREEN_H))
     pygame.display.set_caption('双人坦克对战')
 
     print('=' * 58)
