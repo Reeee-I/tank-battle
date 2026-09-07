@@ -7,7 +7,7 @@
 
   <Targets>
     <Target>
-      <TargetName>BT_Player2</TargetName>
+      <TargetName>BT_Player1</TargetName>
       <ToolsetNumber>0x0</ToolsetNumber>
       <ToolsetName>MCS-51</ToolsetName>
       <TargetOption>
@@ -43,8 +43,8 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>..\HEX\</OutputDirectory>
-          <OutputName>BT_Player2</OutputName>
+          <OutputDirectory>..\..\HEX\</OutputDirectory>
+          <OutputName>BT_Player1</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
           <CreateHexFile>1</CreateHexFile>
@@ -296,9 +296,9 @@
             <InterruptVectorAddress>0</InterruptVectorAddress>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>PLAYER_ID=2</Define>
+              <Define>PLAYER_ID=1</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\01_下位机程序\common\inc;..\..\01_下位机程序\04_音效模块</IncludePath>
+              <IncludePath>..\common\inc;..\04_音效模块</IncludePath>
             </VariousControls>
           </C51>
           <Ax51>
@@ -358,12 +358,12 @@
             <File>
               <FileName>STC_BSP.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\..\01_下位机程序\common\STC_BSP.lib</FilePath>
+              <FilePath>..\common\STC_BSP.lib</FilePath>
             </File>
             <File>
               <FileName>sound_effect.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\01_下位机程序\04_音效模块\sound_effect.c</FilePath>
+              <FilePath>..\04_音效模块\sound_effect.c</FilePath>
             </File>
           </Files>
         </Group>
