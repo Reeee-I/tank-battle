@@ -22,3 +22,9 @@ HEX/*
 # --- Windows / 通用 ---
 Thumbs.db
 Desktop.ini
+
+# BLE �Žӱ��������������� tools/fetch_bleak_deps.py ���ɣ�
+02_��λ������/tools/_bleak_deps/
+
+# BLE 桥接本地依赖（换机由 tools/fetch_bleak_deps.py 生成）
+02_上位机程序/tools/_bleak_deps/
