@@ -42,8 +42,10 @@
 │   ├── fetch_bleak_deps.py # 换机时重新拉取 bleak+winrt 依赖到 _bleak_deps/
 │   ├── bt_port_test.py     # 经典蓝牙 SPP 链路检测（路线 A 用）
 │   ├── send_led_hp.py      # 独立下发 AA D1/D2 HP 帧验证下行 LED
+│   ├── wait_link.py        # 等待游戏侧 COM 出现玩家帧（一键启动用）
 │   ├── _bleak_deps/        # 本地依赖（bleak+winrt，未入库，换机用上面的脚本生成）
-│   └── com0com_x/          # com0com 安装包（本地安装用，未入库）
+│   └── com0com_x/          # com0com 安装包（已弃用，保留勿删）
+├── 启动蓝牙对战.bat        # ★ 双击即可：开桥接→等链路→启动游戏（日常使用入口）
 └── HEX/                   # ★ 测试期 hex 单独放置（Keil Output 指向这里）
     ├── BT_Player1.hex     # 编译产物
     ├── BT_Player2.hex
@@ -76,14 +78,15 @@ python tools/serial_probe.py COMx
 python main.py --p1 COM3 --p2 COM6
 ```
 
-## 测试结论（截至 2026-09-06）
+## 测试结论（截至 2026-09-06 · 游戏实测通过）
 
 | 项目 | 结论 |
 |---|---|
 | 编译 0 Error（BT_Player1/2.hex，Keil 实测） | ✅ 0 Error（BSP 库 L16 警告与既有工程一致） |
-| 蓝牙模块实测型号 | ⚠️ **BT05 = CC2541 BLE 透传**（非 HC-05 经典蓝牙）→ 改走 BLE 桥接路线 |
-| BLE 上行链路（板→BT05→PC，`AA 01` 心跳/按键） | ✅ 实测打通（4 秒 41 帧 ≈ 100ms/帧） |
-| 下行 LED 血量（PC→BLE→板） | 待测（0xFFE1 同时支持 write，链路设计可达，需 COM 打通后验证） |
-| com0com 虚拟口接游戏 | ⚠️ 受阻：Win11 25H2 拒绝老签名驱动（577）；三条出路见 BLE桥接方案.md |
+| 蓝牙模块实测型号 | ⚠️ **BT05 = CC2541 BLE 透传**（非 HC-05 经典蓝牙）→ 走 BLE 桥接路线 |
+| BLE 上行（板→BT05→PC，心跳/按键 `AA 01`） | ✅ 实测：100ms/帧稳定（8s≈80 帧） |
+| 下行 LED 血量（PC→BLE→板） | ✅ 实测：满血 6 灯 / 死亡全灭（VSPD 路线全双工） |
+| **游戏实测（`--p1 COM20` 蓝牙手柄）** | ✅ **2026-09-06 用户确认成功**（VSPD 替代 com0com，解决 Win11 25H2 签名问题） |
+| 日常使用流程 | 双击 `启动蓝牙对战.bat`（3 步封装），详见 BLE桥接方案.md 第六节 |
 | 既有方案回归（无任何既有文件改动） | ✅ git 复核：仅测试文件夹新增，正式目录零改动 |
-| 双蓝牙并行互不干扰 | 待测（需两块板+两模块/两 COM） |
+| 双蓝牙并行互不干扰 | 待测（需两块板+两模块；届时两块板各连一路 BLE 桥） |
