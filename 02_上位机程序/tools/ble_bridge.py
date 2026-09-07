@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""ble_bridge.py —— BLE↔虚拟串口 桥接程序（蓝牙测试开发专用）
+"""ble_bridge.py —— BLE↔虚拟串口 桥接程序（蓝牙手柄正式路线 PC 端部件）
 
 背景：手头模块是 BT05（CC2541 BLE 透传，0xFFE0/0xFFE1），Windows 不会把它
 变成 COM 口。本程序把 BLE 链路上的字节流搬到一对虚拟串口的一侧（另一侧给
 游戏用），从而让既有游戏（pyserial 打开普通 COM）无需改动即可联机：
 
-    游戏 main.py --p1 COM_A      ┌── com0com 虚拟串口对 ──┐
+    游戏 main.py --p1 COM_A      ┌── VSPD 虚拟串口对 ──┐
                               ──►│ COM_A (游戏)  COM_B (桥) │──► ble_bridge.py
                                  └──────────────────────┘       │ bleak(BLE)
                                                           BT05 模块 ←UART← 手柄板
@@ -13,7 +13,7 @@
 用法：
     python ble_bridge.py --com COM_B --addr 00:15:83:F0:15:97 [--debug]
 
-    --com   : 桥接程序占用的虚拟串口（com0com 对的一侧，另一侧给游戏 --p1）
+    --com   : 桥接程序占用的虚拟串口（VSPD 对的一侧，另一侧给游戏 --p1）
     --addr  : 模块蓝牙地址（BT05 一般为 00:15:83:F0:15:97）
     --debug : 打印双向字节流（十六进制）
     --scan  : 只扫描附近 BT05/BT 模块（列出地址与名称）后退出
@@ -273,7 +273,7 @@ def main():
         return 0
     if not args.com:
         ap.print_help()
-        print("\n[提示] 需要 --com（com0com 虚拟串口对的一侧）与 --addr（模块地址）。")
+        print("\n[提示] 需要 --com（VSPD 虚拟串口对的一侧）与 --addr（模块地址）。")
         return 2
     try:
         asyncio.run(run_bridge(args))
