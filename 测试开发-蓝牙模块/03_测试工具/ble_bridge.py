@@ -83,7 +83,7 @@ async def ble_session(client, tx_queue, on_rx, log):
     """连接建立后：订阅 notify（BLE→串口），并消费队列（串口→BLE）。
     返回条件：BLE 断开 或 串口→BLE 写失败（由外层负责重连）。"""
     log("BLE 已连接，正在查找透传通道 0xFFE0/0xFFE1 …")
-    services = await client.get_services()
+    services = client.services   # bleak 3.x：连接后已就绪的属性（勿用已移除的 get_services()）
     char = None
     for svc in services:
         if svc.uuid.lower() == BLE_SVC.lower():
