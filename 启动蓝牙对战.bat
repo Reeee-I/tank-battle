@@ -14,12 +14,8 @@ echo ============================================================
 
 echo.
 echo [0/3] 检查 COM21 是否被旧桥接占用 ...
-python -c "import serial,sys
-try:
-    s=serial.Serial('COM21',9600,timeout=0.2); s.close()
-except Exception:
-    sys.exit(2)"
-if errorlevel 2 goto :busy
+python -c "import serial; serial.Serial('COM21',9600,timeout=0.2).close()"
+if errorlevel 1 goto :busy
 
 echo [1/3] 启动 BLE 桥接（新窗口，勿关闭）...
 start "BLE桥接-勿关" cmd /k python "%~dp002_上位机程序\tools\ble_bridge.py" --com COM21 --addr 00:15:83:F0:15:97
