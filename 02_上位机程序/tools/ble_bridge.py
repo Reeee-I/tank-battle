@@ -103,7 +103,13 @@ async def ble_session(client, tx_queue, on_rx, log):
     log("透传通道: %s（%s）" % (char.uuid, ",".join(sorted(props))))
 
     # BLE → 串口
+    last_rx = [None]        # 最近一次收到数据的时间（loop 时钟）
+    warned_idle = [False]   # 无数据警告是否已提示
+    loop = asyncio.get_running_loop()
+
     def _on_notify(_sender, data):
+        last_rx[0] = loop.time()
+        warned_idle[0] = False
         try:
             on_rx(bytes(data))
         except Exception as e:
@@ -120,6 +126,12 @@ async def ble_session(client, tx_queue, on_rx, log):
             if not client.is_connected:
                 log("BLE 连接断开")
                 break
+            # 无数据看门狗：连上但长时间无任何字节 → 提示复位（BT05 老毛病）
+            if (last_rx[0] is None or loop.time() - last_rx[0] > 8.0) and not warned_idle[0]:
+                warned_idle[0] = True
+                log("警告：连接正常但已 8 秒未收到任何数据 —— 请确认蓝牙板已上电；"
+                    "若已上电仍如此，多半是 BT05 被 Windows 重新配对后休眠："
+                    "请删除 Windows 里 BT05 配对 + 蓝牙板断电重上电")
             continue
         if data is None:
             break
