@@ -69,7 +69,7 @@ A大项目/
 │   ├── tools/
 │   │   ├── serial_probe.py        #     串口裸监听调试工具
 │   │   ├── ble_bridge.py          #     ★ BLE↔虚拟串口 桥接（蓝牙手柄 PC 端部件）
-│   │   ├── wait_link.py           #     一键启动：等待链路就绪
+│   │   ├── wait_link.py           #     等待 COM 出现蓝牙帧（链路确认/排障用）
 │   │   ├── send_led_hp.py         #     手动下发 AA D1/D2 HP 验 LED
 │   │   ├── fetch_bleak_deps.py    #     生成本地依赖 _bleak_deps（换机用）
 │   │   └── _bleak_deps/           #     本地依赖 bleak+winrt（不入库，见 .gitignore）
@@ -85,7 +85,7 @@ A大项目/
 │   ├── 485_Relay.hex / IR_Player2.hex / IR_Relay.hex / BT_Player1.hex / BT_Player2.hex
 │   └── README.md                  # HEX 命名 / 用途对照表
 │
-├── 启动BLE桥接.bat                # ★ 蓝牙手柄入口①（根目录显眼位置）：只启动 BLE 桥接并等链路就绪
+├── 启动BLE桥接.bat                # ★ 蓝牙手柄入口①（根目录显眼位置）：单窗口跑 BLE 桥接（滚动 aa 01 = 就绪）
 ├── 启动游戏.bat                    # ★ 入口②：双击即开游戏（python main.py --p1 COM20，玩家1=蓝牙；桥接未就绪会自动恢复连接）
 ├── .gitignore
 └── README.md                      ← 本文件
@@ -137,7 +137,7 @@ A大项目/
 | PC → 板 下行血量帧 `AA D1/D2 HP`（LED 血量条） | 下发侧 `serial_handler.py` / `game.py`；接收侧 `01_有线模式\main.c`、`02_RS485模式\main_handle.c`、`05_蓝牙模式\main.c`、中转转发 `main_hub.c` |
 | 485 点名轮询时序 / 空闲窗口转发 | `02_RS485模式\main_hub.c`（常量集中在文件顶部） |
 | 红外 NEC 收发（IR_TXD / IR_RXD） | `03_红外模式\01_发射端\main.c`、`03_红外模式\02_接收端\main.c`；接口头文件 `common\inc\IR.h` |
-| 蓝牙手柄接线 / PC 端 VSPD+桥接配置 / 日常使用 | `05_蓝牙模式\README.md`；一键启动 = 根目录 `启动BLE桥接.bat`；桥接代码 `02_上位机程序\tools\ble_bridge.py` |
+| 蓝牙手柄接线 / PC 端 VSPD+桥接配置 / 日常使用 | `05_蓝牙模式\README.md`；入口 = 根目录 `启动BLE桥接.bat`（桥接）+ `启动游戏.bat`（游戏）；桥接代码 `02_上位机程序\tools\ble_bridge.py` |
 | 蜂鸣器音效（启用 / 关闭 / 音量 / 播放点） | `04_音效模块\sound_effect.h/.c`（宏 `SOUND_ENABLED`、`SOUND_VOLUME`） |
 | BSP 初始化 / 显示 / 串口 / ADC / LED | `common\inc\`（sys.H、displayer.h、uart1.h、uart2.h、adc.h、Key.H、Beep.h …）与 `common\STC_BSP.lib` |
 | 游戏规则数值 / 道具平衡 / 地图设计 | `02_上位机程序\game.py`（常量集中在对应类顶部） |
@@ -204,7 +204,8 @@ python tools/serial_probe.py
   合并清单与"旧→新"路径映射表见 `03_文档/08_整理记录/整理说明.md`。
 - **第二次整理（2026-09-07）**：蓝牙无线方案（测试期目录 `测试开发-蓝牙模块/`）
   并入正式结构 —— 固件/工程入 `01_下位机程序/05_蓝牙模式/`、hex 入根 `HEX\`、
-  PC 工具入 `02_上位机程序/tools/`、一键启动脚本放根目录；BT05 BLE + VSPD 桥接
-  定为当前正式无线路线；详细映射与决策见 `03_文档/08_整理记录/整理说明.md`。
+  PC 工具入 `02_上位机程序/tools/`、启动脚本放根目录（`启动BLE桥接.bat` 与
+  `启动游戏.bat` 两只，职责分离）；BT05 BLE + VSPD 桥接定为当前正式无线路线；
+  详细映射与决策见 `03_文档/08_整理记录/整理说明.md`。
 - 详细历史版本（各版本验收记录）保留在 `03_文档/05_开发日志/开发日志.md` 与
   `03_文档/04_项目计划/开发计划.md`。
