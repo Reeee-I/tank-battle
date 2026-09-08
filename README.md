@@ -11,7 +11,7 @@
 | **① RS485 三板手柄（主推）** | `01_下位机程序/02_RS485模式/` | `485_Player1.hex` / `485_Player2.hex` / `485_Relay.hex` | 两块手柄走 485 总线，第三块中转板 USB 上报 PC（单 COM 双玩家） |
 | ② 有线 USB 直连（可选） | `01_下位机程序/01_有线模式/` | `USB_Player1.hex` / `USB_Player2.hex` | 两块手柄各自 USB 直连 PC（两个 COM） |
 | ③ 红外无线（可选） | `01_下位机程序/03_红外模式/` | `IR_Player2.hex`（发射端）/ `IR_Relay.hex`（接收转发） | 玩家2 无线手柄（红外发射）+ 接收转发板 |
-| **④ 蓝牙无线（正式路线）** | `01_下位机程序/05_蓝牙模式/` | `BT_Player1.hex` / `BT_Player2.hex` | 手柄板 EXT 口 UART2 接 BT05（BLE 透传），PC 经 `tools/ble_bridge.py` + VSPD 虚拟 COM20/21 接入；全双工支持下行 LED 血量/音效（真机联调通过，日常双击根目录 `启动蓝牙对战.bat`） |
+| **④ 蓝牙无线（正式路线）** | `01_下位机程序/05_蓝牙模式/` | `BT_Player1.hex` / `BT_Player2.hex` | 手柄板 EXT 口 UART2 接 BT05（BLE 透传），PC 经 `tools/ble_bridge.py` + VSPD 虚拟 COM20/21 接入；全双工支持下行 LED 血量/音效（真机联调通过，日常：双击根目录 `启动蓝牙对战.bat` 开桥接 → 另开终端 `python main.py --p1 COM20`） |
 
 > 蓝牙定稿说明：手头模块为 **BT05（CC2541 BLE 透传）** 且难以取得 HC-05/HC-06，
 > 故 **BT05 BLE + ble_bridge + VSPD** 即当前正式无线路线（2026-09-07 用户确认），
@@ -85,7 +85,7 @@ A大项目/
 │   ├── 485_Relay.hex / IR_Player2.hex / IR_Relay.hex / BT_Player1.hex / BT_Player2.hex
 │   └── README.md                  # HEX 命名 / 用途对照表
 │
-├── 启动蓝牙对战.bat                # ★ 蓝牙手柄一键启动（显眼入口：开桥接→等链路→开游戏）
+├── 启动蓝牙对战.bat                # ★ 蓝牙手柄入口（显眼位置）：只负责启动 BLE 桥接并等链路就绪；游戏需另开终端 `python main.py --p1 COM20`
 ├── .gitignore
 └── README.md                      ← 本文件
 ```
@@ -175,8 +175,12 @@ cd 02_上位机程序
 pip install -r requirements.txt
 python main.py                  :: 自动扫描串口；--p1/--p2 可手动指定
 
-:: 2) 蓝牙手柄（当前正式无线路线）：板上电后双击根目录
-启动蓝牙对战.bat                :: 自动：开 BLE 桥接 → 等链路 → python main.py --p1 COM20 --p2 COM4
+:: 2) 蓝牙手柄（当前正式无线路线）：
+::    板上电 → 双击 启动蓝牙对战.bat（开 BLE 桥接、等链路就绪）
+::    → 另开终端：
+cd 02_上位机程序
+python main.py --p1 COM20         :: 玩家1=蓝牙手柄（玩家2 键盘；有有线板加 --p2 COM4）
+::    注意：不要不带参数直接 python main.py（自动扫描看不到 VSPD 虚拟口）
 
 :: 3) 编译板端固件（Keil uVision4 + C51）
 ::    打开对应方案目录下的 .uvproj → F7（Output 已指向 ..\..\HEX\ 等）
